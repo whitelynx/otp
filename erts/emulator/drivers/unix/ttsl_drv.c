@@ -89,15 +89,22 @@ static Uint32 *lbuf;		/* The current line buffer */
 static int llen;		/* The current line length */
 static int lpos;                /* The current "cursor position" in the line buffer */
 
-/* 
+/*
  * Tags used in line buffer to show that these bytes represent special characters,
- * Max unicode is 0x0010ffff, so we have lots of place for meta tags... 
+ * Max unicode is 0x0010ffff, so we have lots of place for meta tags...
  */
 #define CONTROL_TAG 0x10000000U /* Control character, value in first position */
 #define ESCAPED_TAG 0x01000000U /* Escaped character, value in first position */
 #define TAG_MASK    0xFF000000U
 
 #define MAXSIZE (1 << 16)
+
+/*
+ * Check if a character is printable in either UTF8 mode or ASCII mode.
+ * Includes ESC (27) so that ANSI escape sequences (color, terminal title, etc.) work.
+ */
+#define UTF8_ISPRINT(ch) (ch == 27 || ch >= 128 || isprint(ch))
+#define ASCII_ISPRINT(ch) (ch == 27 || (ch <= 255 && isprint(ch)))
 
 #define COL(_l) ((_l) % cols)
 #define LINE(_l) ((_l) / cols)
@@ -294,7 +301,7 @@ static ErlDrvData ttysl_start(ErlDrvPort port, char* buf)
     ttysl_out = fdopen(ttysl_fd, "w");
 
 #ifdef PRIMITIVE_UTF8_CHECK
-    setlocale(LC_CTYPE, "");  /* Set international environment, 
+    setlocale(LC_CTYPE, "");  /* Set international environment,
 				 ignore result */
     if (((l = getenv("LC_ALL"))   && *l) ||
 	((l = getenv("LC_CTYPE")) && *l) ||
@@ -302,7 +309,7 @@ static ErlDrvData ttysl_start(ErlDrvPort port, char* buf)
 	if (strstr(l, "UTF-8"))
 	    utf8_mode = 1;
     }
-    
+
 #else
     l = setlocale(LC_CTYPE, "");  /* Set international environment */
     if (l != NULL) {
@@ -330,14 +337,14 @@ static ErlDrvData ttysl_start(ErlDrvPort port, char* buf)
 #define DEF_WIDTH 80
 static void ttysl_get_window_size(Uint32 *width, Uint32 *height)
 {
-#ifdef TIOCGWINSZ 
+#ifdef TIOCGWINSZ
     struct winsize ws;
     if (ioctl(ttysl_fd,TIOCGWINSZ,&ws) == 0) {
 	*width = (Uint32) ws.ws_col;
 	*height = (Uint32) ws.ws_row;
-	if (*width <= 0) 
+	if (*width <= 0)
 	    *width = DEF_WIDTH;
-	if (*height <= 0) 
+	if (*height <= 0)
 	    *height = DEF_HEIGHT;
 	return;
     }
@@ -345,7 +352,7 @@ static void ttysl_get_window_size(Uint32 *width, Uint32 *height)
     *width = DEF_WIDTH;
     *height = DEF_HEIGHT;
 }
-    
+
 static ErlDrvSSizeT ttysl_control(ErlDrvData drv_data,
 				  unsigned int command,
 				  char *buf, ErlDrvSizeT len,
@@ -416,9 +423,9 @@ static int put_utf8(int ch, byte *target, int sz, int *pos)
 	if (((*pos) + 1) >= sz) {
 	    return -1;
 	}
-	target[(*pos)++] = (((byte) (x >> 6)) | 
+	target[(*pos)++] = (((byte) (x >> 6)) |
 			    ((byte) 0xC0));
-	target[(*pos)++] = (((byte) (x & 0x3F)) | 
+	target[(*pos)++] = (((byte) (x & 0x3F)) |
 			    ((byte) 0x80));
     } else if (x < 0x10000) {
 	if ((x >= 0xD800 && x <= 0xDFFF) ||
@@ -430,32 +437,32 @@ static int put_utf8(int ch, byte *target, int sz, int *pos)
 	    return -1;
 	}
 
-	target[(*pos)++] = (((byte) (x >> 12)) | 
+	target[(*pos)++] = (((byte) (x >> 12)) |
 			    ((byte) 0xE0));
-	target[(*pos)++] = ((((byte) (x >> 6)) & 0x3F)  | 
+	target[(*pos)++] = ((((byte) (x >> 6)) & 0x3F)  |
 			    ((byte) 0x80));
-	target[(*pos)++] = (((byte) (x & 0x3F)) | 
+	target[(*pos)++] = (((byte) (x & 0x3F)) |
 			    ((byte) 0x80));
     } else if (x < 0x110000) { /* Standard imposed max */
 	if (((*pos) + 3) >= sz) {
 	    return -1;
 	}
-	target[(*pos)++] = (((byte) (x >> 18)) | 
+	target[(*pos)++] = (((byte) (x >> 18)) |
 			    ((byte) 0xF0));
-	target[(*pos)++] = ((((byte) (x >> 12)) & 0x3F)  | 
+	target[(*pos)++] = ((((byte) (x >> 12)) & 0x3F)  |
 			    ((byte) 0x80));
-	target[(*pos)++] = ((((byte) (x >> 6)) & 0x3F)  | 
+	target[(*pos)++] = ((((byte) (x >> 6)) & 0x3F)  |
 			    ((byte) 0x80));
-	target[(*pos)++] = (((byte) (x & 0x3F)) | 
+	target[(*pos)++] = (((byte) (x & 0x3F)) |
 			    ((byte) 0x80));
     } else {
 	return -1;
     }
     return 0;
 }
-    
 
-static int pick_utf8(byte *s, int sz, int *pos) 
+
+static int pick_utf8(byte *s, int sz, int *pos)
 {
     int size = sz - (*pos);
     byte *source;
@@ -476,9 +483,9 @@ static int pick_utf8(byte *s, int sz, int *pos)
 		return -1;
 	    }
 	    (*pos) += 2;
-	    unipoint = 
+	    unipoint =
 		(((Uint) ((*source) & ((byte) 0x1F))) << 6) |
-		((Uint) (source[1] & ((byte) 0x3F))); 	
+		((Uint) (source[1] & ((byte) 0x3F)));
 	    return (int) unipoint;
 	} else if (((*source) & ((byte) 0xF0)) == 0xE0) {
 	    if (size < 3) {
@@ -489,7 +496,7 @@ static int pick_utf8(byte *s, int sz, int *pos)
 		(((*source) == 0xE0) && (source[1] < 0xA0)) /* overlong */ ) {
 		return -1;
 	    }
-	    if ((((*source) & ((byte) 0xF)) == 0xD) && 
+	    if ((((*source) & ((byte) 0xF)) == 0xD) &&
 		((source[1] & 0x20) != 0)) {
 		return -1;
 	    }
@@ -498,10 +505,10 @@ static int pick_utf8(byte *s, int sz, int *pos)
 		return -1;
 	    }
 	    (*pos) += 3;
-	    unipoint = 
+	    unipoint =
 		(((Uint) ((*source) & ((byte) 0xF))) << 12) |
 		(((Uint) (source[1] & ((byte) 0x3F))) << 6) |
-		((Uint) (source[2] & ((byte) 0x3F))); 	 	
+		((Uint) (source[2] & ((byte) 0x3F)));
 	    return (int) unipoint;
 	} else if (((*source) & ((byte) 0xF8)) == 0xF0) {
 	    if (size < 4) {
@@ -514,16 +521,16 @@ static int pick_utf8(byte *s, int sz, int *pos)
 		return -1;
 	    }
 	    if ((((*source) & ((byte)0x7)) > 0x4U) ||
-		((((*source) & ((byte)0x7)) == 0x4U) && 
+		((((*source) & ((byte)0x7)) == 0x4U) &&
 		 ((source[1] & ((byte)0x3F)) > 0xFU))) {
 		return -1;
 	    }
 	    (*pos) += 4;
-	    unipoint = 
+	    unipoint =
 		(((Uint) ((*source) & ((byte) 0x7))) << 18) |
 		(((Uint) (source[1] & ((byte) 0x3F))) << 12) |
 		(((Uint) (source[2] & ((byte) 0x3F))) << 6) |
-		((Uint) (source[3] & ((byte) 0x3F))); 	 	
+		((Uint) (source[3] & ((byte) 0x3F)));
 	    return (int) unipoint;
 	} else {
 	    return -1;
@@ -533,7 +540,7 @@ static int pick_utf8(byte *s, int sz, int *pos)
     }
 }
 
-static int octal_or_hex_positions(Uint c) 
+static int octal_or_hex_positions(Uint c)
 {
     int x = 0;
     Uint ch = c;
@@ -574,7 +581,7 @@ static void octal_or_hex_format(Uint ch, byte *buf, int *pos)
 	while(num--) {
 	    buf[(*pos)++] = ((byte) ((ch >> (3*num)) & 0x7U) + '0');
 	}
-    }	
+    }
 }
 
 /*
@@ -594,9 +601,9 @@ static int check_buf_size(byte *s, int n)
 	    ch = (int) s[pos];
 	    DEBUGLOG(("Invalid UTF8:%d",ch));
 	    ++pos;
-	} 
+	}
 	if (utf8_mode) { /* That is, terminal is UTF8 compliant */
-	    if (ch >= 128 || isprint(ch)) {
+	    if (UTF8_ISPRINT(ch)) {
 		DEBUGLOG(("Printable(UTF-8:%d):%d",(pos - opos),ch));
 		size++; /* Buffer contains wide characters... */
 	    } else if (ch == '\t') {
@@ -606,10 +613,10 @@ static int check_buf_size(byte *s, int n)
 		size += 2;
 	    }
 	} else {
-	    if (ch <= 255 && isprint(ch)) {
+	    if (ASCII_ISPRINT(ch)) {
 		DEBUGLOG(("Printable:%d",ch));
 		size++;
-	    } else if (ch == '\t') 
+	    } else if (ch == '\t')
 		size += 8;
 	    else if (ch >= 128) {
 		DEBUGLOG(("Non printable:%d",ch));
@@ -621,7 +628,7 @@ static int check_buf_size(byte *s, int n)
 	    }
 	}
     }
-		
+
     if (size + lpos >= lbuf_size) {
 
 	lbuf_size = size + lpos + BUFSIZ;
@@ -636,14 +643,14 @@ static int check_buf_size(byte *s, int n)
 
 static void ttysl_from_erlang(ErlDrvData ttysl_data, char* buf, ErlDrvSizeT count)
 {
-    if (lpos > MAXSIZE) 
+    if (lpos > MAXSIZE)
 	put_chars((byte*)"\n", 1);
 
     switch (buf[0]) {
     case OP_PUTC:
 	DEBUGLOG(("OP: Putc(%lu)",(unsigned long) count-1));
 	if (check_buf_size((byte*)buf+1, count-1) == 0)
-	    return; 
+	    return;
 	put_chars((byte*)buf+1, count-1);
 	break;
     case OP_MOVE:
@@ -684,7 +691,7 @@ static void ttysl_from_tty(ErlDrvData ttysl_data, ErlDrvEvent fd)
 	p += utf8buf_size;
 	utf8buf_size = 0;
     }
-    
+
     if ((i = read((int)(SWord)fd, (char *) p, left)) >= 0) {
 	if (p != b) {
 	    i += (p - b);
@@ -898,7 +905,7 @@ static int insert_buf(byte *s, int n)
 	    DEBUGLOG(("insert_buf: Invalid UTF8:%d",ch));
 	    ++pos;
 	}
-	if ((utf8_mode && (ch >= 128 || isprint(ch))) || (ch <= 255 && isprint(ch))) {
+	if ((utf8_mode && UTF8_ISPRINT(ch)) || ASCII_ISPRINT(ch)) {
 	    DEBUGLOG(("insert_buf: Printable(UTF-8):%d",ch));
 	    lbuf[lpos++] = (Uint32) ch;
 	} else if (ch >= 128) { /* not utf8 mode */
@@ -928,10 +935,10 @@ static int insert_buf(byte *s, int n)
 	    lbuf[lpos++] = CONTROL_TAG;
 	}
     }
-    return lpos - buffpos; /* characters "written" into 
+    return lpos - buffpos; /* characters "written" into
 			      current buffer (may be less due to newline) */
 }
-	
+
 
 
 /*
@@ -1146,7 +1153,7 @@ static int move_down(int n)
       tputs(down, 1, outc);
     return TRUE;
 }
-		    
+
 
 /*
  * Updates cols if terminal has resized (SIGWINCH). Should be called
@@ -1161,14 +1168,14 @@ static int move_down(int n)
 static void update_cols(void)
 {
     Uint32 width, height;
- 
+
     if (cols_needs_update) {
 	cols_needs_update = FALSE;
 	ttysl_get_window_size(&width, &height);
 	cols = width;
     }
 }
-		    
+
 
 /*
  * Put a terminal device into non-canonical mode with ECHO off.
@@ -1232,7 +1239,7 @@ static int tty_init(int fd, int canon, int echo, int sig)
 	tty_smode.c_iflag &= ~(BRKINT|IGNPAR|ICRNL|IXON|IXANY);
 #else
 	tty_smode.c_iflag &= ~(BRKINT|IGNPAR|ICRNL|IXON);
-#endif	
+#endif
 	tty_smode.c_lflag &= ~(ISIG|IEXTEN);
     }
     return 0;
@@ -1258,11 +1265,11 @@ static int tty_reset(int fd)         /* of terminal device */
 
     if (tcsetattr(fd, TCSANOW, &tty_rmode) < 0)
 	return(-1);
-    
+
     return(0);
 }
 
-/* 
+/*
  * Signal handler to cope with signals so that we can reset the tty
  * to the orignal settings
  */
@@ -1281,7 +1288,7 @@ static RETSIGTYPE suspend(int sig)
     sys_sigrelease(sig);	/* Allow 'sig' to come through */
     kill(getpid(), sig);	/* Send ourselves the signal */
     sys_sigblock(sig);		/* Reset to old mask */
-    sys_sigset(sig, suspend);	/* Reset signal handler */ 
+    sys_sigset(sig, suspend);	/* Reset signal handler */
 
     if (tty_set(ttysl_fd) < 0) {
 	fprintf(stderr,"Can't set tty raw \n");
