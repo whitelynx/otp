@@ -69,10 +69,12 @@ int lpos;                       /* The current "cursor position" in the line buf
 
 /*
  * Check if a character is printable in either UTF8 mode or ASCII mode.
- * Includes ESC (27) so that ANSI escape sequences (color, terminal title, etc.) work.
+ * Includes ESC (27) so that ANSI escape sequences (color, terminal title,
+ * etc.) work, and \1 and \2 so that readline can recognize escape sequence
+ * boundaries.
  */
-#define UTF8_ISPRINT(ch) (ch == 27 || ch >= 128 || isprint(ch))
-#define ASCII_ISPRINT(ch) (ch == 27 || (ch <= 255 && isprint(ch)))
+#define UTF8_ISPRINT(ch) (ch == 1 || ch == 2 || ch == 27 || ch >= 128 || isprint(ch))
+#define ASCII_ISPRINT(ch) (ch == 1 || ch == 2 || ch == 27 || (ch <= 255 && isprint(ch)))
 
 #define DEBUGLOG(X) /* nothing */
 
