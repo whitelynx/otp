@@ -451,17 +451,17 @@ length_after({line,_,{_Bef,Aft},_}) ->
 %%  Calculate the length of a prompt string, ignoring characters between \1 and
 %%  \2, like readline.
 prompt_length(Pbs) ->
-	case string:chr(Pbs, 1) of
+    case string:chr(Pbs, 1) of
+	0 ->
+	    length(Pbs);
+	NextIgnorePos ->
+	    case string:chr(Pbs, 2) of
 		0 ->
-			length(Pbs);
-		NextIgnorePos ->
-			case string:chr(Pbs, 2) of
-				0 ->
-					NextIgnorePos - 1;
-				NextResumePos ->
-					NextIgnorePos - 1 + prompt_length(string:substr(Pbs, NextResumePos + 1))
-			end
-	end.
+		    NextIgnorePos - 1;
+		NextResumePos ->
+		    NextIgnorePos - 1 + prompt_length(string:substr(Pbs, NextResumePos + 1))
+	    end
+    end.
 
 prompt({line,Pbs,_,_}) ->
     Pbs.
