@@ -432,7 +432,7 @@ erase_inp({line,_,{Bef,Aft},_}) ->
     reverse(erase([], Bef, Aft, [])).
 
 erase(Pbs, Bef, Aft, Rs) ->
-    [{delete_chars,-length(Pbs)-length(Bef)},{delete_chars,length(Aft)}|Rs].
+    [{delete_chars,-prompt_length(Pbs)-length(Bef)},{delete_chars,length(Aft)}|Rs].
 
 redraw_line({line,Pbs,{Bef,Aft},_}) ->
     reverse(redraw(Pbs, Bef, Aft, [])).
@@ -445,6 +445,23 @@ length_before({line,Pbs,{Bef,_Aft},_}) ->
 
 length_after({line,_,{_Bef,Aft},_}) ->
     length(Aft).
+
+%% prompt_length(Pbs) ->
+%%   Length
+%%  Calculate the length of a prompt string, ignoring characters between \1 and
+%%  \2, like readline.
+prompt_length(Pbs) ->
+	case string:chr(Pbs, 1) of
+		0 ->
+			length(Pbs);
+		NextIgnorePos ->
+			case string:chr(Pbs, 2) of
+				0 ->
+					NextIgnorePos - 1;
+				NextResumePos ->
+					NextIgnorePos - 1 + prompt_length(string:substr(Pbs, NextResumePos + 1))
+			end
+	end.
 
 prompt({line,Pbs,_,_}) ->
     Pbs.
