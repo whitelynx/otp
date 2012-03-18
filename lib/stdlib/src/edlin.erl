@@ -24,7 +24,7 @@
 -export([init/0,start/1,edit_line/2,prefix_arg/1]).
 -export([erase_line/1,erase_inp/1,redraw_line/1]).
 -export([length_before/1,length_after/1,prompt/1]).
--export([current_line/1]).
+-export([current_line/1,key_map/2,key_map_func/1]).
 %%-export([expand/1]).
 
 -export([edit_line1/2]).
@@ -32,6 +32,8 @@
 -import(lists, [reverse/1, reverse/2]).
 
 -export([over_word/3]).
+
+-define(DEF_KEY_MAP_FUNC, default).
 
 
 %% A Continuation has the structure:
@@ -42,6 +44,13 @@
 %%  the editor.
 
 init() ->
+    KeyMapFun = case application:get_env(stdlib, edlin_key_map_func) of
+	{ok,Fun} ->
+	    Fun;
+	_ ->
+	    default
+    end,
+    put(key_map_func, KeyMapFun),
     put(kill_buffer, []).
 
 %% start(Prompt)
@@ -69,8 +78,9 @@ edit_line1(Cs, {line,P,L,M}) ->
 
 edit([C|Cs], P, Line, {blink,_}, [_|Rs]) ->	%Remove blink here
     edit([C|Cs], P, Line, none, Rs);
-edit([C|Cs], P, {Bef,Aft}, Prefix, Rs0) ->
-    case key_map(C, Prefix) of
+edit([C|Rest], P, {Bef,Aft}, Prefix, Rs0) ->
+    {Mapped, Cs} = wrap_key_map(C, Rest, Prefix),
+    case Mapped of
 	meta ->
 	    edit(Cs, P, {Bef,Aft}, meta, Rs0);
 	meta_left_sq_bracket ->
@@ -146,10 +156,39 @@ prefix_arg(none) -> 1;
 prefix_arg({ctlu,N}) -> N;
 prefix_arg(N) -> N.
 
+%% Set the key map function to use for shell input.
+-spec key_map_func(KeyMapFunc) -> KeyMapFunc when
+      KeyMapFunc :: 'default' | {module(),atom()}.
+
+key_map_func(KeyMapFunc) ->
+    Prev = case application:get_env(stdlib, edlin_key_map_func) of
+	undefined ->
+	   ?DEF_KEY_MAP_FUNC;
+	{ok, Old} ->
+	   Old
+    end,
+    application_controller:set_env(stdlib, edlin_key_map_func, KeyMapFunc),
+    Prev.
+
+%% wrap_key_map(Char, RemainingCharacters, Prefix)
+%%  Wrap key_map or another key-mapping function so we can push keywords
+%%  without requiring user key map functions to implement it.
+
+wrap_key_map(A, _, _) when is_atom(A) -> A;		% so we can push keywords
+wrap_key_map(C, Cs, Prefix) ->
+    KeyMapFun = case get(key_map_func) of
+	?DEF_KEY_MAP_FUNC ->
+	    fun key_map/3;
+	Fun ->
+	    Fun
+    end,
+    KeyMapFun(C, Cs, Prefix).
+
+key_map(C, Cs, Prefix) -> {key_map(C, Prefix),Cs}.
+
 %% key_map(Char, Prefix)
 %%  Map a character and a prefix to an action.
 
-key_map(A, _) when is_atom(A) -> A;		% so we can push keywords
 key_map($\^A, none) -> beginning_of_line;
 key_map($\^B, none) -> backward_char;
 key_map($\^D, none) -> forward_delete_char;
@@ -185,8 +224,7 @@ key_map($\177, meta) -> backward_kill_word;
 key_map($[, meta) -> meta_left_sq_bracket;
 key_map($D, meta_left_sq_bracket) -> backward_char;
 key_map($C, meta_left_sq_bracket) -> forward_char;
-key_map(C, none) when C >= $\s ->
-    {insert,C};
+key_map(C, none) when C >= $\s -> {insert,C};
 key_map(C, _) -> {undefined,C}.
 
 %% do_op(Action, Before, After, Requests)
