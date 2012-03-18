@@ -280,6 +280,9 @@ do_op(backward_kill_word, Bef0, Aft, Rs) ->
 do_op(kill_line, Bef, Aft, Rs) ->
     put(kill_buffer, Aft),
     {{Bef,[]},[{delete_chars,length(Aft)}|Rs]};
+do_op(backward_kill_line, Bef, Aft, Rs) ->
+    put(kill_buffer, Bef),
+    {{[],Aft},[{delete_chars,-length(Bef)}|Rs]};
 do_op(yank, Bef, [], Rs) ->
     Kill = get(kill_buffer),
     {{reverse(Kill, Bef),[]},[{put_chars, unicode,Kill}|Rs]};
