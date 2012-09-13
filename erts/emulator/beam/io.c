@@ -43,6 +43,7 @@
 #include "erl_version.h"
 #include "error.h"
 #include "erl_async.h"
+#include "dtrace-wrapper.h"
 
 extern ErlDrvEntry fd_driver_entry;
 extern ErlDrvEntry vanilla_driver_entry;
@@ -180,6 +181,20 @@ typedef struct line_buf_context {
 
 #define LINEBUF_INITIAL 100
 
+#ifdef USE_VM_PROBES
+#define DTRACE_FORMAT_COMMON_PID_AND_PORT(PID, PORT)         \
+    DTRACE_CHARBUF(process_str, DTRACE_TERM_BUF_SIZE);       \
+    DTRACE_CHARBUF(port_str, DTRACE_TERM_BUF_SIZE);          \
+                                                             \
+    dtrace_pid_str((PID), process_str);                      \
+    dtrace_port_str((PORT), port_str);
+#define DTRACE_FORMAT_COMMON_PROC_AND_PORT(PID, PORT)        \
+    DTRACE_CHARBUF(process_str, DTRACE_TERM_BUF_SIZE);       \
+    DTRACE_CHARBUF(port_str, DTRACE_TERM_BUF_SIZE);          \
+                                                             \
+    dtrace_proc_str((PID), process_str);                     \
+    dtrace_port_str((PORT), port_str);
+#endif
 
 /* The 'number' field in a port now has two parts: the lowest bits
    contain the index in the port table, and the higher bits are a counter
@@ -244,10 +259,8 @@ get_free_port(void)
 	}
     }
     port->status = ERTS_PORT_SFLG_INITIALIZING;
-#ifdef ERTS_SMP
-    ERTS_SMP_LC_ASSERT(erts_smp_atomic_read_nob(&port->refc) == 0);
+    ERTS_LC_ASSERT(erts_smp_atomic_read_nob(&port->refc) == 0);
     erts_smp_atomic_set_nob(&port->refc, 2); /* Port alive + lock */
-#endif	
     erts_smp_port_state_unlock(port);
     return num & port_num_mask;
 }
@@ -325,10 +338,14 @@ port_cleanup(Port *prt)
     prt->drv_ptr = NULL;
     ASSERT(driver);
 
-#ifdef ERTS_SMP
-
     ASSERT(prt->status & ERTS_PORT_SFLG_FREE_SCHEDULED);
-    ERTS_SMP_LC_ASSERT(erts_smp_atomic_read_nob(&prt->refc) == 0);
+    ERTS_LC_ASSERT(erts_smp_atomic_read_nob(&prt->refc) == 0);
+
+    ASSERT(prt->status & ERTS_PORT_SFLG_PORT_DEBUG);
+    ASSERT(!(prt->status & ERTS_PORT_SFLG_FREE));
+    prt->status = ERTS_PORT_SFLG_FREE;
+
+#ifdef ERTS_SMP
 
     port_specific = (prt->status & ERTS_PORT_SFLG_PORT_SPECIFIC_LOCK);
 
@@ -336,10 +353,6 @@ port_cleanup(Port *prt)
     ASSERT(mtx);
 
     prt->lock = NULL;
-
-    ASSERT(prt->status & ERTS_PORT_SFLG_PORT_DEBUG);
-    ASSERT(!(prt->status & ERTS_PORT_SFLG_FREE));
-    prt->status = ERTS_PORT_SFLG_FREE;
 
     erts_smp_port_state_unlock(prt);    
     erts_smp_mtx_unlock(mtx);
@@ -425,6 +438,7 @@ setup_port(Port* prt, Eterm pid, erts_driver_t *driver,
     sys_strcpy(new_name, name);
     erts_smp_runq_lock(runq);
     erts_smp_port_state_lock(prt);    
+    prt->os_pid = -1;
     prt->status = ERTS_PORT_SFLG_CONNECTED | xstatus;
     prt->snapshot = erts_smp_atomic32_read_nob(&erts_ports_snapshot);    
     old_name = prt->name;
@@ -590,10 +604,8 @@ erts_open_driver(erts_driver_t* driver,	/* Pointer to driver. */
 	/* Need to mark the port as free again */
 	erts_smp_port_state_lock(port);
 	port->status = ERTS_PORT_SFLG_FREE;
-#ifdef ERTS_SMP
-	ERTS_SMP_LC_ASSERT(erts_smp_atomic_read_nob(&port->refc) == 2);
+	ERTS_LC_ASSERT(erts_smp_atomic_read_nob(&port->refc) == 2);
 	erts_smp_atomic_set_nob(&port->refc, 0); 
-#endif	
 	erts_smp_port_state_unlock(port);
 	return -3;
     }
@@ -610,7 +622,11 @@ erts_open_driver(erts_driver_t* driver,	/* Pointer to driver. */
 	port->lock = erts_alloc(ERTS_ALC_T_PORT_LOCK,
 					      sizeof(erts_smp_mtx_t));
 	erts_smp_mtx_init_x(port->lock,
+#ifdef ERTS_ENABLE_LOCK_COUNT
+			    (erts_lcnt_rt_options & ERTS_LCNT_OPT_PORTLOCK) ? "port_lock" : NULL,
+#else
 			    "port_lock",
+#endif
 			    port->id);
 	xstatus |= ERTS_PORT_SFLG_PORT_SPECIFIC_LOCK;
     }
@@ -639,6 +655,12 @@ erts_open_driver(erts_driver_t* driver,	/* Pointer to driver. */
 	    trace_sched_ports_where(port, am_in, am_start);
 	}
 	port->caller = pid;
+#ifdef USE_VM_PROBES
+        if (DTRACE_ENABLED(driver_start)) {
+            DTRACE_FORMAT_COMMON_PID_AND_PORT(pid, port)
+            DTRACE3(driver_start, process_str, driver->name, port_str);
+        }
+#endif
 	fpe_was_unmasked = erts_block_fpe();
 	drv_data = (*driver->start)((ErlDrvPort)(port_ix),
 				    name, opts);
@@ -743,7 +765,7 @@ driver_create_port(ErlDrvPort creator_port_ix, /* Creating port */
 	return (ErlDrvTermData) -1;   /* pid does not exist */
     }
     if ((port_num = get_free_port()) < 0) {
-	errno = ENFILE;
+	errno = SYSTEM_LIMIT;
 	erts_smp_proc_unlock(rp, ERTS_PROC_LOCK_LINK);
 	erts_smp_mtx_unlock(&erts_driver_list_lock);
 	return (ErlDrvTermData) -1;
@@ -762,7 +784,13 @@ driver_create_port(ErlDrvPort creator_port_ix, /* Creating port */
 	creator_port->xports = xplp;
 	port->lock = erts_alloc(ERTS_ALC_T_PORT_LOCK,
 					      sizeof(erts_smp_mtx_t));
-	erts_smp_mtx_init_locked_x(port->lock, "port_lock", port_id);
+	erts_smp_mtx_init_locked_x(port->lock,
+#ifdef ERTS_ENABLE_LOCK_COUNT
+				   (erts_lcnt_rt_options & ERTS_LCNT_OPT_PORTLOCK) ? "port_lock" : NULL,
+#else
+				   "port_lock",
+#endif
+				   port_id);
 	xstatus |= ERTS_PORT_SFLG_PORT_SPECIFIC_LOCK;
     }
 
@@ -1170,6 +1198,12 @@ int erts_write_to_port(Eterm caller_id, Port *p, Eterm list)
 	ev.size = size;  /* total size */
 	ev.iov = ivp;
 	ev.binv = bvp;
+#ifdef USE_VM_PROBES
+        if (DTRACE_ENABLED(driver_outputv)) {
+            DTRACE_FORMAT_COMMON_PID_AND_PORT(caller_id, p)
+            DTRACE4(driver_outputv, process_str, port_str, p->name, size);
+        }
+#endif
 	fpe_was_unmasked = erts_block_fpe();
 	(*drv->outputv)((ErlDrvData)p->drv_data, &ev);
 	erts_unblock_fpe(fpe_was_unmasked);
@@ -1189,8 +1223,21 @@ int erts_write_to_port(Eterm caller_id, Port *p, Eterm list)
 	buf = erts_alloc(ERTS_ALC_T_TMP, size+1);
 	r = io_list_to_buf(list, buf, size);
 
+#ifdef USE_VM_PROBES
+	if(DTRACE_ENABLED(port_command)) {
+            DTRACE_FORMAT_COMMON_PID_AND_PORT(caller_id, p)
+	    DTRACE4(port_command, process_str, port_str, p->name, "command");
+	}
+#endif
+
 	if (r >= 0) {
 	    size -= r;
+#ifdef USE_VM_PROBES
+            if (DTRACE_ENABLED(driver_output)) {
+                DTRACE_FORMAT_COMMON_PID_AND_PORT(caller_id, p)
+                DTRACE4(driver_output, process_str, port_str, p->name, size);
+            }
+#endif
 	    fpe_was_unmasked = erts_block_fpe();
 	    (*drv->output)((ErlDrvData)p->drv_data, buf, size);
 	    erts_unblock_fpe(fpe_was_unmasked);
@@ -1214,6 +1261,12 @@ int erts_write_to_port(Eterm caller_id, Port *p, Eterm list)
 	     */
 	    buf = erts_alloc(ERTS_ALC_T_TMP, size+1); 
 	    r = io_list_to_buf(list, buf, size);
+#ifdef USE_VM_PROBES
+            if (DTRACE_ENABLED(driver_output)) {
+                DTRACE_FORMAT_COMMON_PID_AND_PORT(caller_id, p)
+                DTRACE4(driver_output, process_str, port_str, p->name, size);
+            }
+#endif
 	    fpe_was_unmasked = erts_block_fpe();
 	    (*drv->output)((ErlDrvData)p->drv_data, buf, size);
 	    erts_unblock_fpe(fpe_was_unmasked);
@@ -1257,7 +1310,7 @@ void init_io(void)
 
     pdl_init();
 
-    if (erts_sys_getenv("ERL_MAX_PORTS", maxports, &maxportssize) == 0) 
+    if (erts_sys_getenv_raw("ERL_MAX_PORTS", maxports, &maxportssize) == 0) 
 	erts_max_ports = atoi(maxports);
     else
 	erts_max_ports = sys_max_files();
@@ -1273,7 +1326,7 @@ void init_io(void)
 	    erts_max_ports = ERTS_MAX_R9_PORTS;
     }
 
-    port_extra_shift = erts_fit_in_bits(erts_max_ports - 1);
+    port_extra_shift = erts_fit_in_bits_int32(erts_max_ports - 1);
     port_num_mask = (1 << ports_bits) - 1;
 
     erts_port_tab_index_mask = ~(~((Uint) 0) << port_extra_shift);
@@ -1297,11 +1350,17 @@ void init_io(void)
 
     for (i = 0; i < erts_max_ports; i++) {
 	erts_port_task_init_sched(&erts_port[i].sched);
-#ifdef ERTS_SMP
 	erts_smp_atomic_init_nob(&erts_port[i].refc, 0);
+#ifdef ERTS_SMP
 	erts_port[i].lock = NULL;
 	erts_port[i].xports = NULL;
-	erts_smp_spinlock_init_x(&erts_port[i].state_lck, "port_state", make_small(i));
+	erts_smp_spinlock_init_x(&erts_port[i].state_lck,
+#ifdef ERTS_ENABLE_LOCK_COUNT
+				 (erts_lcnt_rt_options & ERTS_LCNT_OPT_PORTLOCK) ? "port_state" : NULL,
+#else
+				 "port_state",
+#endif
+				 make_small(0));
 #endif
 	erts_port[i].tracer_proc = NIL;
 	erts_port[i].trace_flags = 0;
@@ -1333,6 +1392,27 @@ void init_io(void)
     erts_smp_tsd_set(driver_list_lock_status_key, NULL);
     erts_smp_mtx_unlock(&erts_driver_list_lock);
 }
+
+#if defined(ERTS_ENABLE_LOCK_COUNT) && defined(ERTS_SMP)
+void erts_lcnt_enable_io_lock_count(int enable) {
+    int i;
+
+    for (i = 0; i < erts_max_ports; i++) {
+	Port* p = &erts_port[i];
+	if (enable) {
+	    erts_lcnt_init_lock_x(&p->state_lck.lcnt, "port_state", ERTS_LCNT_LT_SPINLOCK, make_small(i));
+	    if (p->lock) {
+		erts_lcnt_init_lock_x(&p->lock->lcnt, "port_lock", ERTS_LCNT_LT_MUTEX, make_small(i));
+	    }
+	} else {
+	    erts_lcnt_destroy_lock(&p->state_lck.lcnt);
+	    if (p->lock) {
+		erts_lcnt_destroy_lock(&p->lock->lcnt);
+	    }
+	}
+    }
+}
+#endif
 
 /*
  * Buffering of data when using line oriented I/O on ports
@@ -1510,6 +1590,7 @@ deliver_result(Eterm sender, Eterm pid, Eterm res)
 {
     Process *rp;
     ErtsProcLocks rp_locks = 0;
+    int scheduler = erts_get_scheduler_id() != 0;
 
     ERTS_SMP_CHK_NO_PROC_LOCKS;
 
@@ -1517,7 +1598,9 @@ deliver_result(Eterm sender, Eterm pid, Eterm res)
 	   && is_internal_pid(pid)
 	   && internal_pid_index(pid) < erts_max_processes);
 
-    rp = erts_pid2proc_opt(NULL, 0, pid, 0, ERTS_P2P_FLG_SMP_INC_REFC);
+    rp = (scheduler
+	  ? erts_proc_lookup(pid)
+	  : erts_pid2proc_opt(NULL, 0, pid, 0, ERTS_P2P_FLG_SMP_INC_REFC));
 
     if (rp) {
 	Eterm tuple;
@@ -1529,9 +1612,15 @@ deliver_result(Eterm sender, Eterm pid, Eterm res)
 	    hp = erts_alloc_message_heap(sz_res + 3, &bp, &ohp, rp, &rp_locks);
 	    res = copy_struct(res, sz_res, &hp, ohp);
 	    tuple = TUPLE2(hp, sender, res);
-	erts_queue_message(rp, &rp_locks, bp, tuple, NIL);
+	erts_queue_message(rp, &rp_locks, bp, tuple, NIL
+#ifdef USE_VM_PROBES
+			   , NIL
+#endif
+			   );
 	erts_smp_proc_unlock(rp, rp_locks);
-	erts_smp_proc_dec_refc(rp);
+	if (!scheduler)
+	    erts_smp_proc_dec_refc(rp);
+
     }
 }
 
@@ -1556,6 +1645,7 @@ static void deliver_read_message(Port* prt, Eterm to,
     ErlHeapFragment *bp;
     ErlOffHeap *ohp;
     ErtsProcLocks rp_locks = 0;
+    int scheduler = erts_get_scheduler_id() != 0;
 
     ERTS_SMP_LC_ASSERT(erts_lc_is_port_locked(prt));    
     ERTS_SMP_CHK_NO_PROC_LOCKS;
@@ -1570,7 +1660,10 @@ static void deliver_read_message(Port* prt, Eterm to,
 	need += 2*len;
     }
 
-    rp = erts_pid2proc_opt(NULL, 0, to, 0, ERTS_P2P_FLG_SMP_INC_REFC);
+    rp = (scheduler
+	  ? erts_proc_lookup(to)
+	  : erts_pid2proc_opt(NULL, 0, to, 0, ERTS_P2P_FLG_SMP_INC_REFC));
+
     if (!rp)
 	return;
 
@@ -1618,9 +1711,15 @@ static void deliver_read_message(Port* prt, Eterm to,
     tuple = TUPLE2(hp, prt->id, tuple);
     hp += 3;
 
-    erts_queue_message(rp, &rp_locks, bp, tuple, am_undefined);
-    erts_smp_proc_unlock(rp, rp_locks);
-    erts_smp_proc_dec_refc(rp);
+    erts_queue_message(rp, &rp_locks, bp, tuple, am_undefined
+#ifdef USE_VM_PROBES
+			   , NIL
+#endif
+		       );
+    if (rp_locks)
+	erts_smp_proc_unlock(rp, rp_locks);
+    if (!scheduler)
+	erts_smp_proc_dec_refc(rp);
 }
 
 /* 
@@ -1687,6 +1786,7 @@ deliver_vec_message(Port* prt,			/* Port */
     ErlHeapFragment *bp;
     ErlOffHeap *ohp;
     ErtsProcLocks rp_locks = 0;
+    int scheduler = erts_get_scheduler_id() != 0;
 
     ERTS_SMP_LC_ASSERT(erts_lc_is_port_locked(prt));
     ERTS_SMP_CHK_NO_PROC_LOCKS;
@@ -1695,7 +1795,10 @@ deliver_vec_message(Port* prt,			/* Port */
      * Check arguments for validity.
      */
 
-    rp = erts_pid2proc_opt(NULL, 0, to, 0, ERTS_P2P_FLG_SMP_INC_REFC);
+
+    rp = (scheduler
+	  ? erts_proc_lookup(to)
+	  : erts_pid2proc_opt(NULL, 0, to, 0, ERTS_P2P_FLG_SMP_INC_REFC));
     if (!rp)
 	return;
 
@@ -1771,9 +1874,14 @@ deliver_vec_message(Port* prt,			/* Port */
     tuple = TUPLE2(hp, prt->id, tuple);
     hp += 3;
 
-    erts_queue_message(rp, &rp_locks, bp, tuple, am_undefined);
+    erts_queue_message(rp, &rp_locks, bp, tuple, am_undefined
+#ifdef USE_VM_PROBES
+		       , NIL
+#endif
+		       );
     erts_smp_proc_unlock(rp, rp_locks);
-    erts_smp_proc_dec_refc(rp);
+    if (!scheduler)
+	erts_smp_proc_dec_refc(rp);
 }
 
 
@@ -1810,6 +1918,12 @@ static void flush_port(Port *p)
     ERTS_SMP_LC_ASSERT(erts_lc_is_port_locked(p));
 
     if (p->drv_ptr->flush != NULL) {
+#ifdef USE_VM_PROBES
+        if (DTRACE_ENABLED(driver_flush)) {
+            DTRACE_FORMAT_COMMON_PID_AND_PORT(p->connected, p)
+            DTRACE3(driver_flush, process_str, port_str, p->name);
+        }
+#endif
         if (IS_TRACED_FL(p, F_TRACE_SCHED_PORTS)) {
 	    trace_sched_ports_where(p, am_in, am_flush);
 	}
@@ -1837,6 +1951,7 @@ terminate_port(Port *prt)
     Eterm send_closed_port_id;
     Eterm connected_id = NIL /* Initialize to silence compiler */;
     erts_driver_t *drv;
+    int halt;
 
     ERTS_SMP_CHK_NO_PROC_LOCKS;
     ERTS_SMP_LC_ASSERT(erts_lc_is_port_locked(prt));
@@ -1844,6 +1959,8 @@ terminate_port(Port *prt)
     ASSERT(!prt->nlinks);
     ASSERT(!prt->monitors);
 
+    /* prt->status may be altered by kill_port()below */
+    halt = (prt->status & ERTS_PORT_SFLG_HALT) != 0;
     if (prt->status & ERTS_PORT_SFLG_SEND_CLOSED) {
 	erts_port_status_band_set(prt, ~ERTS_PORT_SFLG_SEND_CLOSED);
 	send_closed_port_id = prt->id;
@@ -1862,6 +1979,12 @@ terminate_port(Port *prt)
     drv = prt->drv_ptr;
     if ((drv != NULL) && (drv->stop != NULL)) {
 	int fpe_was_unmasked = erts_block_fpe();
+#ifdef USE_VM_PROBES
+        if (DTRACE_ENABLED(driver_stop)) {
+            DTRACE_FORMAT_COMMON_PID_AND_PORT(prt->connected, prt)
+            DTRACE3(driver_stop, process_str, drv->name, port_str);
+        }
+#endif
 	(*drv->stop)((ErlDrvData)prt->drv_data);
 	erts_unblock_fpe(fpe_was_unmasked);
 #ifdef ERTS_SMP
@@ -1895,6 +2018,10 @@ terminate_port(Port *prt)
      * We don't want to send the closed message until after the
      * port has been removed from the port table (in kill_port()).
      */
+    if (halt && (erts_smp_atomic32_dec_read_nob(&erts_halt_progress) == 0)) {
+	erts_smp_port_unlock(prt); /* We will exit and never return */
+	erl_exit_flush_async(erts_halt_code, "");
+    }
     if (is_internal_port(send_closed_port_id))
 	deliver_result(send_closed_port_id, connected_id, am_closed);
 
@@ -2019,6 +2146,19 @@ erts_do_exit_port(Port *p, Eterm from, Eterm reason)
 
    rreason = (reason == am_kill) ? am_killed : reason;
 
+#ifdef USE_VM_PROBES
+   if (DTRACE_ENABLED(port_exit)) {
+       DTRACE_CHARBUF(from_str, DTRACE_TERM_BUF_SIZE);
+       DTRACE_CHARBUF(port_str, DTRACE_TERM_BUF_SIZE);
+       DTRACE_CHARBUF(rreason_str, 64);
+
+       erts_snprintf(from_str, sizeof(from_str), "%T", from);
+       dtrace_port_str(p, port_str);
+       erts_snprintf(rreason_str, sizeof(rreason_str), "%T", rreason);
+       DTRACE4(port_exit, from_str, port_str, p->name, rreason_str);
+   }
+#endif
+
    if ((p->status & (ERTS_PORT_SFLGS_DEAD
 		     | ERTS_PORT_SFLG_EXITING
 		     | ERTS_PORT_SFLG_IMMORTAL))
@@ -2119,6 +2259,13 @@ void erts_port_command(Process *proc,
 	    if (tp[2] == am_close) {
 		erts_port_status_bor_set(port, ERTS_PORT_SFLG_SEND_CLOSED);
 		erts_do_exit_port(port, pid, am_normal);
+
+#ifdef USE_VM_PROBES
+		if(DTRACE_ENABLED(port_command)) {
+                    DTRACE_FORMAT_COMMON_PROC_AND_PORT(proc, port)
+		    DTRACE4(port_command, process_str, port_str, port->name, "close");
+		}
+#endif
 		goto done;
 	    } else if (is_tuple_arity(tp[2], 2)) {
 		tp = tuple_val(tp[2]);
@@ -2126,6 +2273,12 @@ void erts_port_command(Process *proc,
 		    if (erts_write_to_port(caller_id, port, tp[2]) == 0)
 			goto done;
 		} else if ((tp[1] == am_connect) && is_internal_pid(tp[2])) {
+#ifdef USE_VM_PROBES
+		    if(DTRACE_ENABLED(port_command)) {
+                        DTRACE_FORMAT_COMMON_PROC_AND_PORT(proc, port)
+			DTRACE4(port_command, process_str, port_str, port->name, "connect");
+		    }
+#endif
 		    port->connected = tp[2];
 		    deliver_result(port->id, pid, am_connected);
 		    goto done;
@@ -2136,9 +2289,8 @@ void erts_port_command(Process *proc,
 
     {
 	ErtsProcLocks rp_locks = ERTS_PROC_LOCKS_XSIG_SEND;
-	Process* rp = erts_pid2proc_opt(NULL, 0,
-					port->connected, rp_locks,
-					ERTS_P2P_FLG_SMP_INC_REFC);
+	Process* rp = erts_pid2proc(NULL, 0,
+				    port->connected, rp_locks);
 	if (rp) {
 	    (void) erts_send_exit_signal(NULL,
 					 port->id,
@@ -2149,7 +2301,6 @@ void erts_port_command(Process *proc,
 					 NULL,
 					 0);
 	    erts_smp_proc_unlock(rp, rp_locks);
-	    erts_smp_proc_dec_refc(rp);
 	}
 
     }
@@ -2227,6 +2378,15 @@ erts_port_control(Process* p, Port* prt, Uint command, Eterm iolist)
 
     erts_smp_proc_unlock(p, ERTS_PROC_LOCK_MAIN);
     ERTS_SMP_CHK_NO_PROC_LOCKS;
+
+#ifdef USE_VM_PROBES
+    if (DTRACE_ENABLED(port_control) || DTRACE_ENABLED(driver_control)) {
+        DTRACE_FORMAT_COMMON_PROC_AND_PORT(p, prt);
+        DTRACE4(port_control, process_str, port_str, prt->name, command);
+        DTRACE5(driver_control, process_str, port_str, prt->name,
+                command, to_len);
+    }
+#endif
 
     /*
      * Call the port's control routine.
@@ -2368,6 +2528,10 @@ print_port_info(int to, void *arg, int i)
 void
 set_busy_port(ErlDrvPort port_num, int on)
 {
+#ifdef USE_VM_PROBES
+    DTRACE_CHARBUF(port_str, 16);
+#endif
+
     ERTS_SMP_CHK_NO_PROC_LOCKS;
 
     ERTS_SMP_LC_ASSERT(erts_lc_is_port_locked(&erts_port[port_num]));
@@ -2375,12 +2539,26 @@ set_busy_port(ErlDrvPort port_num, int on)
     if (on) {
         erts_port_status_bor_set(&erts_port[port_num],
 				 ERTS_PORT_SFLG_PORT_BUSY);
+#ifdef USE_VM_PROBES
+        if (DTRACE_ENABLED(port_busy)) {
+            erts_snprintf(port_str, sizeof(port_str),
+                          "%T", erts_port[port_num].id);
+            DTRACE1(port_busy, port_str);
+        }
+#endif
     } else {
         ErtsProcList* plp = erts_port[port_num].suspended;
         erts_port_status_band_set(&erts_port[port_num],
 				  ~ERTS_PORT_SFLG_PORT_BUSY);
         erts_port[port_num].suspended = NULL;
 
+#ifdef USE_VM_PROBES
+        if (DTRACE_ENABLED(port_not_busy)) {
+            erts_snprintf(port_str, sizeof(port_str),
+                          "%T", erts_port[port_num].id);
+            DTRACE1(port_not_busy, port_str);
+        }
+#endif
 	if (erts_port[port_num].dist_entry) {
 	    /*
 	     * Processes suspended on distribution ports are
@@ -2398,6 +2576,28 @@ set_busy_port(ErlDrvPort port_num, int on)
 	 */
 
         if (plp) {
+#ifdef USE_VM_PROBES
+            /*
+             * Hrm, for blocked dist ports, plp always seems to be NULL.
+             * That's not so fun.
+             * Well, another way to get the same info is using a D
+             * script to correlate an earlier process-port_blocked+pid
+             * event with a later process-scheduled event.  That's
+             * subject to the multi-CPU races with how events are
+             * handled, but hey, that way works most of the time.
+             */
+            if (DTRACE_ENABLED(process_port_unblocked)) {
+                DTRACE_CHARBUF(pid_str, 16);
+                ErtsProcList* plp2 = plp;
+
+                erts_snprintf(port_str, sizeof(port_str),
+                             "%T", erts_port[port_num]);
+                while (plp2 != NULL) {
+                    erts_snprintf(pid_str, sizeof(pid_str), "%T", plp2->pid);
+                    DTRACE2(process_port_unblocked, pid_str, port_str);
+                }
+            }
+#endif
             /* First proc should be resumed last */
 	    if (plp->next) {
 		erts_resume_processes(plp->next);
@@ -2444,6 +2644,14 @@ void erts_raw_port_command(Port* p, byte* buf, Uint len)
 		 p->drv_ptr->name ? p->drv_ptr->name : "unknown");
 
     p->caller = NIL;
+#ifdef USE_VM_PROBES
+    if (DTRACE_ENABLED(driver_output)) {
+        DTRACE_CHARBUF(port_str, DTRACE_TERM_BUF_SIZE);
+
+        dtrace_port_str(p, port_str);
+        DTRACE4(driver_output, "-raw-", port_str, p->name, len);
+    }
+#endif
     fpe_was_unmasked = erts_block_fpe();
     (*p->drv_ptr->output)((ErlDrvData)p->drv_data, (char*) buf, (int) len);
     erts_unblock_fpe(fpe_was_unmasked);
@@ -2459,6 +2667,12 @@ int async_ready(Port *p, void* data)
 	ERTS_SMP_LC_ASSERT(erts_lc_is_port_locked(p));
 	ASSERT(!(p->status & ERTS_PORT_SFLGS_DEAD));
 	if (p->drv_ptr->ready_async != NULL) {
+#ifdef USE_VM_PROBES
+            if (DTRACE_ENABLED(driver_ready_async)) {
+                DTRACE_FORMAT_COMMON_PID_AND_PORT(p->connected, p)
+                DTRACE3(driver_ready_async, process_str, port_str, p->name);
+            }
+#endif
 	    (*p->drv_ptr->ready_async)((ErlDrvData)p->drv_data, data);
 	    need_free = 0;
 #ifdef ERTS_SMP
@@ -2637,13 +2851,17 @@ void driver_report_exit(int ix, int status)
    ErlHeapFragment *bp = NULL;
    ErlOffHeap *ohp;
    ErtsProcLocks rp_locks = 0;
+   int scheduler = erts_get_scheduler_id() != 0;
 
    ERTS_SMP_CHK_NO_PROC_LOCKS;
    ERTS_SMP_LC_ASSERT(erts_lc_is_port_locked(prt));
 
    pid = prt->connected;
    ASSERT(is_internal_pid(pid));
-   rp = erts_pid2proc_opt(NULL, 0, pid, 0, ERTS_P2P_FLG_SMP_INC_REFC);
+
+   rp = (scheduler
+	 ? erts_proc_lookup(pid)
+	 : erts_pid2proc_opt(NULL, 0, pid, 0, ERTS_P2P_FLG_SMP_INC_REFC));
    if (!rp)
        return;
 
@@ -2653,10 +2871,15 @@ void driver_report_exit(int ix, int status)
    hp += 3;
    tuple = TUPLE2(hp, prt->id, tuple);
 
-   erts_queue_message(rp, &rp_locks, bp, tuple, am_undefined);
+   erts_queue_message(rp, &rp_locks, bp, tuple, am_undefined
+#ifdef USE_VM_PROBES
+		      , NIL
+#endif
+		      );
 
    erts_smp_proc_unlock(rp, rp_locks);
-   erts_smp_proc_dec_refc(rp);
+   if (!scheduler)
+       erts_smp_proc_dec_refc(rp);
 }
 
 
@@ -2787,6 +3010,7 @@ driver_deliver_term(ErlDrvPort port,
     ErlOffHeap *ohp;
     ErtsProcLocks rp_locks = 0;
     struct b2t_states__ b2t;
+    int scheduler = 1; /* Silence erroneous warning... */
 
     init_b2t_states(&b2t);
 
@@ -2978,7 +3202,13 @@ driver_deliver_term(ErlDrvPort port,
     if (res <= 0)
 	goto done;
 
-    rp = erts_pid2proc_opt(NULL, 0, to, rp_locks, ERTS_P2P_FLG_SMP_INC_REFC);
+    /*
+     * Increase refc on proc if done from a non-scheduler thread.
+     */
+    scheduler = erts_get_scheduler_id() != 0;
+    rp = (scheduler
+	  ? erts_proc_lookup(to)
+	  : erts_pid2proc_opt(NULL, 0, to, 0, ERTS_P2P_FLG_SMP_INC_REFC));
     if (!rp) {
 	res = 0;
 	goto done;
@@ -3052,6 +3282,8 @@ driver_deliver_term(ErlDrvPort port,
 	    Uint size = ptr[1];
 	    Uint offset = ptr[2];
 
+	    erts_smp_atomic_add_nob(&erts_bytes_in, (erts_aint_t) size);
+
 	    if (size <= ERL_ONHEAP_BIN_LIMIT) {
 		ErlHeapBin* hbp = (ErlHeapBin *) hp;
 		hp += heap_bin_size(size);
@@ -3083,6 +3315,9 @@ driver_deliver_term(ErlDrvPort port,
 	case ERL_DRV_BUF2BINARY: { /* char*, size */
 	    byte *bufp = (byte *) ptr[0];
 	    Uint size = (Uint) ptr[1];
+
+	    erts_smp_atomic_add_nob(&erts_bytes_in, (erts_aint_t) size);
+
 	    if (size <= ERL_ONHEAP_BIN_LIMIT) {
 		ErlHeapBin* hbp = (ErlHeapBin *) hp;
 		hp += heap_bin_size(size);
@@ -3119,6 +3354,7 @@ driver_deliver_term(ErlDrvPort port,
 	}
 
 	case ERL_DRV_STRING: /* char*, length */
+	    erts_smp_atomic_add_nob(&erts_bytes_in, (erts_aint_t) ptr[1]);
 	    mess = buf_to_intlist(&hp, (char*)ptr[0], ptr[1], NIL);
 	    ptr += 2;
 	    break;
@@ -3203,7 +3439,11 @@ driver_deliver_term(ErlDrvPort port,
 	    HRelease(rp, hp_end, hp);	    
 	}
 	/* send message */
-	erts_queue_message(rp, &rp_locks, bp, mess, am_undefined);
+	erts_queue_message(rp, &rp_locks, bp, mess, am_undefined
+#ifdef USE_VM_PROBES
+			   , NIL
+#endif
+			   );
     }
     else {
 	if (b2t.ix > b2t.used)
@@ -3220,7 +3460,8 @@ driver_deliver_term(ErlDrvPort port,
     if (rp) {
 	if (rp_locks)
 	    erts_smp_proc_unlock(rp, rp_locks);
-	erts_smp_proc_dec_refc(rp);
+	if (!scheduler)
+	    erts_smp_proc_dec_refc(rp);
     }
 #endif
     cleanup_b2t_states(&b2t);
@@ -4434,6 +4675,12 @@ void erts_fire_port_monitor(Port *prt, Eterm ref)
     ASSERT(callback != NULL);
     ref_to_driver_monitor(ref,&drv_monitor);
     DRV_MONITOR_UNLOCK_PDL(prt);
+#ifdef USE_VM_PROBES
+    if (DTRACE_ENABLED(driver_process_exit)) {
+        DTRACE_FORMAT_COMMON_PID_AND_PORT(prt->connected, prt)
+        DTRACE3(driver_process_exit, process_str, port_str, prt->name);
+    }
+#endif
     fpe_was_unmasked = erts_block_fpe();
     (*callback)((ErlDrvData) (prt->drv_data), &drv_monitor);
     erts_unblock_fpe(fpe_was_unmasked);
@@ -4877,6 +5124,8 @@ init_driver(erts_driver_t *drv, ErlDrvEntry *de, DE_Handle *handle)
     else {
 	int res;
 	int fpe_was_unmasked = erts_block_fpe();
+        DTRACE4(driver_init, drv->name, drv->version.major, drv->version.minor,
+                drv->flags);
 	res = (*de->init)();
 	erts_unblock_fpe(fpe_was_unmasked);
 	return res;
@@ -5001,11 +5250,11 @@ int null_func(void)
 int
 erl_drv_putenv(char *key, char *value)
 {
-    return erts_write_env(key, value);
+    return erts_sys_putenv_raw(key, value);
 }
 
 int
 erl_drv_getenv(char *key, char *value, size_t *value_size)
 {
-    return erts_sys_getenv(key, value, value_size);
+    return erts_sys_getenv_raw(key, value, value_size);
 }

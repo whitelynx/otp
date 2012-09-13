@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %% 
-%% Copyright Ericsson AB 2000-2011. All Rights Reserved.
+%% Copyright Ericsson AB 2000-2012. All Rights Reserved.
 %% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -83,8 +83,10 @@ open(Protocol, Family, Type, Req, Data) ->
 	    end
     catch
 	%% The only (?) way to get here is to try to open
-	%% the sctp driver when it does not exist
-	error:badarg -> {error,eprotonosupport}
+	%% the sctp driver when it does not exist (badarg)
+	error:badarg       -> {error, eprotonosupport};
+	%% system_limit if out of port slots
+	error:system_limit -> {error, system_limit}
     end.
 
 enc_family(inet) -> ?INET_AF_INET;
@@ -182,7 +184,7 @@ close_pend_loop(S, N) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 bind(S,IP,Port) when is_port(S), is_integer(Port), Port >= 0, Port =< 65535 ->
-    case ctl_cmd(S,?INET_REQ_BIND,[?int16(Port),ip_to_bytes(IP)]) of
+    case ctl_cmd(S,?INET_REQ_BIND,enc_value(set, addr, {IP,Port})) of
 	{ok, [P1,P0]} -> {ok, ?u16(P1, P0)};
 	{error,_}=Error -> Error
     end;
@@ -204,10 +206,10 @@ bindx(S, AddFlag, Addrs) ->
     case getprotocol(S) of
 	sctp ->
 	    %% Really multi-homed "bindx". Stringified args:
-	    %% [AddFlag, (Port, IP)+]:
+	    %% [AddFlag, (AddrBytes see enc_value_2(addr,X))+]:
 	    Args =
 		[?int8(AddFlag)|
-		 [[?int16(Port)|ip_to_bytes(IP)] ||
+		 [enc_value(set, addr, {IP,Port}) ||
 		     {IP, Port} <- Addrs]],
 	    case ctl_cmd(S, ?SCTP_REQ_BINDX, Args) of
 		{ok,_} -> {ok, S};
@@ -1069,7 +1071,6 @@ enc_opt(deliver)         -> ?INET_LOPT_DELIVER;
 enc_opt(exit_on_close)   -> ?INET_LOPT_EXITONCLOSE;
 enc_opt(high_watermark)  -> ?INET_LOPT_TCP_HIWTRMRK;
 enc_opt(low_watermark)   -> ?INET_LOPT_TCP_LOWTRMRK;
-enc_opt(bit8)            -> ?INET_LOPT_BIT8;
 enc_opt(send_timeout)    -> ?INET_LOPT_TCP_SEND_TIMEOUT;
 enc_opt(send_timeout_close) -> ?INET_LOPT_TCP_SEND_TIMEOUT_CLOSE;
 enc_opt(delay_send)      -> ?INET_LOPT_TCP_DELAY_SEND;
@@ -1123,7 +1124,6 @@ dec_opt(?INET_LOPT_DELIVER)       -> deliver;
 dec_opt(?INET_LOPT_EXITONCLOSE)   -> exit_on_close;
 dec_opt(?INET_LOPT_TCP_HIWTRMRK)  -> high_watermark;
 dec_opt(?INET_LOPT_TCP_LOWTRMRK)  -> low_watermark;
-dec_opt(?INET_LOPT_BIT8)          -> bit8;
 dec_opt(?INET_LOPT_TCP_SEND_TIMEOUT) -> send_timeout;
 dec_opt(?INET_LOPT_TCP_SEND_TIMEOUT_CLOSE) -> send_timeout_close;
 dec_opt(?INET_LOPT_TCP_DELAY_SEND)   -> delay_send;
@@ -1218,11 +1218,6 @@ type_opt_1(deliver) ->
 type_opt_1(exit_on_close)   -> bool;
 type_opt_1(low_watermark)   -> int;
 type_opt_1(high_watermark)  -> int;
-type_opt_1(bit8) ->
-    {enum,[{clear, ?INET_BIT8_CLEAR},
-	   {set,   ?INET_BIT8_SET},
-	   {on,    ?INET_BIT8_ON},
-	   {off,   ?INET_BIT8_OFF}]};
 type_opt_1(send_timeout)    -> time;
 type_opt_1(send_timeout_close) -> bool;
 type_opt_1(delay_send)      -> bool;

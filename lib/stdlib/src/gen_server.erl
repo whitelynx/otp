@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 1996-2011. All Rights Reserved.
+%% Copyright Ericsson AB 1996-2012. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -270,7 +270,7 @@ enter_loop(Mod, Options, State) ->
     enter_loop(Mod, Options, State, self(), infinity).
 
 enter_loop(Mod, Options, State, ServerName = {Scope, _})
-  when Scope == local; Scope == local ->
+  when Scope == local; Scope == global ->
     enter_loop(Mod, Options, State, ServerName, infinity);
 
 enter_loop(Mod, Options, State, ServerName = {via, _, _}) ->

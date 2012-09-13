@@ -1,7 +1,7 @@
 #
 # %CopyrightBegin%
 #
-# Copyright Ericsson AB 1996-2011. All Rights Reserved.
+# Copyright Ericsson AB 1996-2012. All Rights Reserved.
 #
 # The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
@@ -44,8 +44,7 @@ MODULES= test_server_ctrl \
 	 test_server \
 	 test_server_sup \
 	 test_server_h \
-	 erl2html2 \
-	 vxworks_client
+	 erl2html2
 
 TS_MODULES= \
 	ts \
@@ -55,9 +54,9 @@ TS_MODULES= \
 	ts_make \
 	ts_erl_config \
 	ts_autoconf_win32 \
-        ts_autoconf_vxworks \
 	ts_install \
-	ts_install_cth
+	ts_install_cth \
+	ts_benchmark
 
 TARGET_MODULES= $(MODULES:%=$(EBIN)/%)
 TS_TARGET_MODULES= $(TS_MODULES:%=$(EBIN)/%)
@@ -124,22 +123,22 @@ $(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
 include $(ERL_TOP)/make/otp_release_targets.mk
 
 release_spec: opt
-	$(INSTALL_DIR) $(RELSYSDIR)/src
-	$(INSTALL_DATA) $(ERL_FILES) $(RELSYSDIR)/src
-	$(INSTALL_DATA) $(INTERNAL_HRL_FILES) $(RELSYSDIR)/src
-	$(INSTALL_DIR) $(RELSYSDIR)/include
-	$(INSTALL_DATA) $(HRL_FILES) $(RELSYSDIR)/include
-	$(INSTALL_DIR) $(RELSYSDIR)/ebin
-	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
+	$(INSTALL_DIR) "$(RELSYSDIR)/src"
+	$(INSTALL_DATA) $(ERL_FILES) "$(RELSYSDIR)/src"
+	$(INSTALL_DATA) $(INTERNAL_HRL_FILES) "$(RELSYSDIR)/src"
+	$(INSTALL_DIR) "$(RELSYSDIR)/include"
+	$(INSTALL_DATA) $(HRL_FILES) "$(RELSYSDIR)/include"
+	$(INSTALL_DIR) "$(RELSYSDIR)/ebin"
+	$(INSTALL_DATA) $(TARGET_FILES) "$(RELSYSDIR)/ebin"
 
 release_tests_spec: opt
-	$(INSTALL_DIR) $(RELEASE_PATH)/test_server
+	$(INSTALL_DIR) "$(RELEASE_PATH)/test_server"
 	$(INSTALL_DATA) $(ERL_FILES) $(TS_ERL_FILES) \
 		$(HRL_FILES) $(INTERNAL_HRL_FILES) $(TS_HRL_FILES) \
 		$(TS_TARGET_FILES) \
 		$(AUTOCONF_FILES) $(C_FILES) $(COVER_FILES) $(CONFIG) \
-		$(RELEASE_PATH)/test_server
-	$(INSTALL_SCRIPT) $(PROGRAMS) $(RELEASE_PATH)/test_server
+		"$(RELEASE_PATH)/test_server"
+	$(INSTALL_SCRIPT) $(PROGRAMS) "$(RELEASE_PATH)/test_server"
 
 release_docs_spec:
 

@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %% 
-%% Copyright Ericsson AB 2005-2011. All Rights Reserved.
+%% Copyright Ericsson AB 2005-2012. All Rights Reserved.
 %% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -73,6 +73,7 @@ suite() -> [{ct_hooks,[ts_install_cth]}].
 
 all() -> 
     [{group, api}, {group, examples}, {group, func}, smp,
+     otp_9981,
      otp_7359].
 
 groups() -> 
@@ -964,6 +965,24 @@ otp_7359_def_inf(Data,{DefSize,InfSize}) ->
     ?line ok = zlib:close(ZInf),
     ok.
 
+otp_9981(Config) when is_list(Config) ->
+    Ports = lists:sort(erlang:ports()),
+    Invalid = <<"My invalid data">>,
+    catch zlib:compress(invalid),
+    Ports = lists:sort(erlang:ports()),
+    catch zlib:uncompress(Invalid),
+    Ports = lists:sort(erlang:ports()),
+    catch zlib:zip(invalid),
+    Ports = lists:sort(erlang:ports()),
+    catch zlib:unzip(Invalid),
+    Ports = lists:sort(erlang:ports()),
+    catch zlib:gzip(invalid),
+    Ports = lists:sort(erlang:ports()),
+    catch zlib:gunzip(Invalid),
+    Ports = lists:sort(erlang:ports()),
+    ok.
+
+    
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%% Helps with testing directly %%%%%%%%%%%%%

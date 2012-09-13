@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2010-2011. All Rights Reserved.
+%% Copyright Ericsson AB 2010-2012. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -25,7 +25,7 @@
 -module(peer).
 
 -include_lib("diameter/include/diameter.hrl").
--include_lib("diameter/src/app/diameter_gen_base_rfc3588.hrl").
+-include_lib("diameter/include/diameter_gen_base_rfc3588.hrl").
 
 -export([start/2,
          listen/2,
@@ -116,6 +116,11 @@ server(T) ->
 %% client/1
 %%
 %% Return config for a connecting transport.
+
+client({all, LA, RA, RP}) ->
+    [[M,{K,C}], T]
+        = [client({P, LA, RA, RP}) || P <- [sctp,tcp]],
+    [M, {K,C,2000} | T];
 
 client({T, LA, RA, RP}) ->
     [{transport_module, tmod(T)},

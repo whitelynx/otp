@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %% 
-%% Copyright Ericsson AB 1999-2011. All Rights Reserved.
+%% Copyright Ericsson AB 1999-2012. All Rights Reserved.
 %% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -472,14 +472,9 @@ default_tracer(Config) when is_list(Config) ->
     ?line M = N,
     ok.
 
-
 %%% Help functions.
 
-huge_data() ->
-    case os:type() of
-	vxworks -> huge_data(4711);
-	_ -> huge_data(16384)
-    end.
+huge_data() -> huge_data(16384).
 huge_data(0) -> [];
 huge_data(N) when N rem 2 == 0 ->
     P = huge_data(N div 2),

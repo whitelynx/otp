@@ -1236,26 +1236,61 @@ true
       <name name="halt" arity="0"/>
       <fsummary>Halt the Erlang runtime system and indicate normal exit to the calling environment</fsummary>
       <desc>
-        <p>Halts the Erlang runtime system and indicates normal exit to
-          the calling environment. Has no return value.</p>
+	<p>The same as
+	  <seealso marker="#halt/2"><c>halt(0, [])</c></seealso>.</p>
         <pre>
 > <input>halt().</input>
-os_prompt%</pre>
+os_prompt% </pre>
       </desc>
     </func>
     <func>
       <name name="halt" arity="1"/>
       <fsummary>Halt the Erlang runtime system</fsummary>
       <desc>
-        <p><c><anno>Status</anno></c> must be a non-negative integer, or a string.
-          Halts the Erlang runtime system. Has no return value.
-          If <c><anno>Status</anno></c> is an integer, it is returned as an exit
-          status of Erlang to the calling environment.
-          If <c><anno>Status</anno></c> is a string, produces an Erlang crash dump
-          with <c><anno>Status</anno></c> as slogan, and then exits with a non-zero
-          status code.</p>
-        <p>Note that on many platforms, only the status codes 0-255 are
-          supported by the operating system.</p>
+	<p>The same as
+	  <seealso marker="#halt/2"><c>halt(<anno>Status</anno>, [])</c></seealso>.</p>
+        <pre>
+> <input>halt(17).</input>
+os_prompt% <input>echo $?</input>
+17
+os_prompt% </pre>
+      </desc>
+    </func>
+    <func>
+      <name name="halt" arity="2"/>
+      <fsummary>Halt the Erlang runtime system</fsummary>
+      <desc>
+        <p><c><anno>Status</anno></c> must be a non-negative integer, a string,
+	  or the atom <c>abort</c>.
+	  Halts the Erlang runtime system. Has no return value.
+	  Depending on <c><anno>Status</anno></c>:
+	</p>
+	<taglist>
+	  <tag>integer()</tag>
+	  <item>The runtime system exits with the integer value <c><anno>Status</anno></c>
+	  as status code to the calling environment (operating system).
+	  </item>
+	  <tag>string()</tag>
+	  <item>An erlang crash dump is produced with <c><anno>Status</anno></c> as slogan,
+	  and then the runtime system exits with status code <c>1</c>.
+	  </item>
+	  <tag><c>abort</c></tag>
+	  <item>
+	    The runtime system aborts producing a core dump, if that is
+	    enabled in the operating system.
+	  </item>
+	</taglist>
+	<p>Note that on many platforms, only the status codes 0-255 are
+	  supported by the operating system.
+	</p>
+	<p>For integer <c><anno>Status</anno></c> the Erlang runtime system closes all ports
+	  and allows async threads to finish their operations before exiting.
+	  To exit without such flushing use
+	  <c><anno>Option</anno></c> as <c>{flush,false}</c>.
+	</p>
+	<p>For statuses <c>string()</c> and <c>abort</c> the <c>flush</c>
+	  option is ignored and flushing is <em>not</em> done.
+	</p>
       </desc>
     </func>
     <func>
@@ -2430,6 +2465,10 @@ os_prompt%</pre>
         <p>It can only be used to check the local time of day if
           the time-zone info of the underlying operating system is
           properly configured.</p>
+        <p>If you do not need the return value to be unique and
+          monotonically increasing, use
+          <seealso marker="kernel:os#timestamp/0">os:timestamp/0</seealso>
+          instead to avoid some overhead.</p>
       </desc>
     </func>
     <func>
@@ -2571,8 +2610,8 @@ os_prompt%</pre>
             <p>This is only valid for <c>{spawn, <anno>Command</anno>}</c> and
 	    <c>{spawn_executable, <anno>FileName</anno>}</c>.
               The external program starts using <c><anno>Dir</anno></c> as its
-              working directory. <c><anno>Dir</anno></c> must be a string. Not
-              available on VxWorks.</p>
+              working directory. <c><anno>Dir</anno></c> must be a string.
+		  </p>
           </item>
           <tag><c>{env, <anno>Env</anno>}</c></tag>
           <item>
@@ -2586,8 +2625,12 @@ os_prompt%</pre>
               port process. Both <c><anno>Name</anno></c> and <c><anno>Val</anno></c> must be
               strings. The one exception is <c><anno>Val</anno></c> being the atom
               <c>false</c> (in analogy with <c>os:getenv/1</c>), which
-              removes the environment variable. Not available on
-              VxWorks.</p>
+              removes the environment variable.
+		  </p>
+	      <p>If Unicode filename encoding is in effect (see the <seealso
+	      marker="erts:erl#file_name_encoding">erl manual
+	      page</seealso>), the strings (both <c>Name</c> and
+	      <c>Value</c>) may contain characters with codepoints > 255.</p>
           </item>
 	  <tag><c>{args, [ string() | binary() ]}</c></tag>
           <item>
@@ -3084,6 +3127,10 @@ os_prompt%</pre>
             <p><c><anno>Bytes</anno></c> is the total number of bytes written to
               the port.</p>
           </item>
+          <tag><c>{os_pid, <anno>OsPid</anno> | undefined}</c></tag>
+          <item>
+            <p><c> <anno>OsPid</anno></c> is the process identifier (or equivalent) of an OS process created with <c>open_port({spawn | spawn_executable, Command}, Options)</c>. If the port is not the result of spawning an OS process, the value is <c>undefined</c>.</p>
+          </item>
         </taglist>
         <p>Failure: <c>badarg</c> if <c><anno>Port</anno></c> is not a local port.</p>
       </desc>
@@ -3504,14 +3551,6 @@ os_prompt%</pre>
           <item>
             <p><c><anno>Size</anno></c> is the size in bytes of the process. This
               includes call stack, heap and internal structures.</p>
-          </item>
-          <tag><c>{message_binary, <anno>BinInfo</anno>}</c></tag>
-          <item>
-            <p><c><anno>BinInfo</anno></c> is a list containing miscellaneous information
-	      about binaries currently being referred to by the message
-	      area. This <c><anno>InfoTuple</anno></c> is only valid on an emulator
-	      using the hybrid heap type. This <c><anno>InfoTuple</anno></c> may be
-	      changed or removed without prior notice.</p>
           </item>
           <tag><c>{message_queue_len, <anno>MessageQueueLen</anno>}</c></tag>
           <item>
@@ -5174,6 +5213,7 @@ ok
       <name name="system_info" arity="1" clause_i="48"/>
       <name name="system_info" arity="1" clause_i="49"/>
       <name name="system_info" arity="1" clause_i="50"/>
+      <name name="system_info" arity="1" clause_i="51"/>
       <fsummary>Information about the system</fsummary>
       <desc>
         <p>Returns various information about the current system
@@ -5267,6 +5307,29 @@ ok
               used by the runtime system. It will be on the form
               <seealso marker="erts:erl_driver#version_management">"&lt;major ver&gt;.&lt;minor ver&gt;"</seealso>.</p>
           </item>
+          <tag><c>dynamic_trace</c></tag>
+          <item>
+            <p>Returns an atom describing the dynamic trace framework
+            compiled into the virtual machine. It can currently be either
+            <c>dtrace</c>, <c>systemtap</c> or <c>none</c>. For a
+            commercial or standard build, this is always <c>none</c>,
+            the other return values indicate a custom configuration
+            (e.g. <c>./configure --with-dynamic-trace=dtrace</c>). See
+            the <seealso marker="runtime_tools:dyntrace">dyntrace
+            </seealso> manual page and the
+            <c>README.dtrace</c>/<c>README.systemtap</c> files in the
+            Erlang source code top directory for more information
+            about dynamic tracing.</p>
+          </item>
+          <tag><c>dynamic_trace_probes</c></tag>
+          <item>
+            <p>Returns a <c>boolean()</c> indicating if dynamic trace probes
+            (either dtrace or systemtap) are built into the
+            emulator. This can only be <c>true</c> if the virtual
+            machine was built for dynamic tracing
+            (i.e. <c>system_info(dynamic_trace)</c> returns
+            <c>dtrace</c> or <c>systemtap</c>).</p>
+          </item>
           <tag><c>elib_malloc</c></tag>
           <item>
             <p>This option will be removed in a future release.
@@ -5299,10 +5362,6 @@ ok
               can spawn a process that does not use the default
               settings.</p>
           </item>
-          <tag><c>global_heaps_size</c></tag>
-          <item>
-            <p>Returns the current size of the shared (global) heap.</p>
-          </item>
           <tag><c>heap_sizes</c></tag>
           <item>
             <p>Returns a list of integers representing valid heap sizes 
@@ -5312,7 +5371,7 @@ ok
           <tag><c>heap_type</c></tag>
           <item>
             <p>Returns the heap type used by the current emulator.
-              Currently the following heap types exist:</p>
+              Currently only the following heap type exists:</p>
             <taglist>
               <tag><c>private</c></tag>
               <item>
@@ -5320,17 +5379,6 @@ ok
                   references between heaps of different processes are
                   allowed. Messages passed between processes are copied
                   between heaps.</p>
-              </item>
-              <tag><c>shared</c></tag>
-              <item>
-                <p>One heap for use by all processes. Messages passed
-                  between processes are passed by reference.</p>
-              </item>
-              <tag><c>hybrid</c></tag>
-              <item>
-                <p>A hybrid of the <c>private</c> and <c>shared</c> heap
-                  types. A shared heap as well as private heaps are
-                  used.</p>
               </item>
             </taglist>
           </item>
@@ -5549,7 +5597,8 @@ ok
 	    <seealso marker="#system_info_schedulers">erlang:system_info(schedulers)</seealso>,
 	    and
 	    <seealso marker="#system_flag_schedulers_online">erlang:system_flag(schedulers_online, SchedulersOnline)</seealso>.
-	    </p>
+	    </p>      <name name="system_info" arity="1" clause_i="49"/>
+
           </item>
           <tag><c>smp_support</c></tag>
           <item>

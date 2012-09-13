@@ -1276,7 +1276,7 @@ sendfile_fallback_int(File, Sock, Bytes, ChunkSize, BytesSent)
   when Bytes > BytesSent; Bytes == 0 ->
     Size = if Bytes == 0 ->
 		   ChunkSize;
-	       (Bytes - BytesSent + ChunkSize) > 0 ->
+	       (Bytes - BytesSent) < ChunkSize ->
 		   Bytes - BytesSent;
 	      true ->
 		   ChunkSize
@@ -1434,7 +1434,11 @@ mode_list(_) ->
 %% Functions for communicating with the file server
 
 call(Command, Args) when is_list(Args) ->
-    gen_server:call(?FILE_SERVER, list_to_tuple([Command | Args]), infinity).
+    X = erlang:dt_spread_tag(true),
+    Y = gen_server:call(?FILE_SERVER, list_to_tuple([Command | Args]), 
+			infinity),
+    erlang:dt_restore_tag(X),
+    Y.
 
 check_and_call(Command, Args) when is_list(Args) ->
     case check_args(Args) of

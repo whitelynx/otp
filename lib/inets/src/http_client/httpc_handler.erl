@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %% 
-%% Copyright Ericsson AB 2002-2011. All Rights Reserved.
+%% Copyright Ericsson AB 2002-2012. All Rights Reserved.
 %% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -55,7 +55,7 @@
 	  status_line,               % {Version, StatusCode, ReasonPharse}
 	  headers,                   % #http_response_h{}
 	  body,                      % binary()
-	  mfa,                       % {Moduel, Function, Args}
+	  mfa,                       % {Module, Function, Args}
 	  pipeline = queue:new(),    % queue() 
 	  keep_alive = queue:new(),  % queue() 
 	  status,   % undefined | new | pipeline | keep_alive | close | ssl_tunnel
@@ -851,14 +851,17 @@ connect(SocketType, ToAddress,
     case IpFamily of
 	inet6fb4 ->
 	    Opts3 = [inet6 | Opts2],
-	    case http_transport:connect(SocketType, ToAddress, Opts3, Timeout) of
-		{error, _Reason} = Error ->
+	    case http_transport:connect(SocketType, 
+					ToAddress, Opts3, Timeout) of
+		{error, Reason6} ->
 		    Opts4 = [inet | Opts2], 
 		    case http_transport:connect(SocketType, 
 						ToAddress, Opts4, Timeout) of
-			{error, _} ->
-			    %% Reply with the "original" error
-			    Error;
+			{error, Reason4} ->
+			    {error, {failed_connect, 
+				     [{to_address, ToAddress}, 
+				      {inet6, Opts3, Reason6}, 
+				      {inet,  Opts4, Reason4}]}};
 			OK ->
 			    OK
 		    end;
@@ -867,7 +870,13 @@ connect(SocketType, ToAddress,
 	    end;
 	_ ->
 	    Opts3 = [IpFamily | Opts2], 
-	    http_transport:connect(SocketType, ToAddress, Opts3, Timeout)
+	    case http_transport:connect(SocketType, ToAddress, Opts3, Timeout) of
+		{error, Reason} ->
+		    {error, {failed_connect, [{to_address, ToAddress}, 
+					      {IpFamily, Opts3, Reason}]}};
+		Else ->
+		    Else
+	    end
     end.
 
 connect_and_send_first_request(Address, Request, #state{options = Options} = State) ->
@@ -1704,7 +1713,32 @@ update_session(ProfileName, #session{id = SessionId} = Session, Pos, Value) ->
     catch
 	error:undef -> % This could happen during code upgrade
 	    Session2 = erlang:setelement(Pos, Session, Value),
-	    insert_session(Session2, ProfileName)
+	    insert_session(Session2, ProfileName);
+	  T:E ->
+            error_logger:error_msg("Failed updating session: "
+                                   "~n   ProfileName: ~p"
+                                   "~n   SessionId:   ~p"
+                                   "~n   Pos:         ~p"
+                                   "~n   Value:       ~p"
+                                   "~nwhen"
+                                   "~n   Session (db) info: ~p"
+                                   "~n   Session (db):      ~p"
+                                   "~n   Session (record):  ~p"
+                                   "~n   T: ~p"
+                                   "~n   E: ~p", 
+                                   [ProfileName, SessionId, Pos, Value, 
+                                    (catch httpc_manager:which_session_info(ProfileName)), 
+                                    Session, 
+                                    (catch httpc_manager:lookup_session(ProfileName, SessionId)), 
+                                    T, E]),
+            exit({failed_updating_session, 
+                  [{profile,    ProfileName}, 
+                   {session_id, SessionId}, 
+                   {pos,        Pos}, 
+                   {value,      Value}, 
+                   {etype,      T}, 
+                   {error,      E}, 
+                   {stacktrace, erlang:get_stacktrace()}]})	    
     end.
 
 

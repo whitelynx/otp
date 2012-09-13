@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2004-2011. All Rights Reserved.
+%% Copyright Ericsson AB 2004-2012. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -2969,13 +2969,6 @@ lookup1(Config) when is_list(Config) ->
                 [3] = lookup_keys(Q)
         end, [{1,a},{3,3}])">>,
 
-       <<"A = 3,
-          etsc(fun(E) ->
-                Q = qlc:q([X || X <- ets:table(E), A =:= {erlang,element}(1, X)]),
-                [{3,3}] = qlc:e(Q),
-                [3] = lookup_keys(Q)
-        end, [{1,a},{3,3}])">>,
-
        <<"etsc(fun(E) ->
                 A = 3,
                 Q = qlc:q([X || X <- ets:table(E), 
@@ -3439,12 +3432,6 @@ lookup2(Config) when is_list(Config) ->
                  [r] = qlc:e(Q),
                  [r] = lookup_keys(Q)
          end, [{keypos,1}], [#r{}])">>,
-       <<"etsc(fun(E) ->
-                Q = qlc:q([element(1, X) || X <- ets:table(E), 
-                                            {erlang,is_record}(X, r, 2)]),
-                 [r] = qlc:e(Q),
-                 [r] = lookup_keys(Q)
-         end, [{keypos,1}], [#r{}])">>,
        {cres,
         <<"etsc(fun(E) ->
                 Q = qlc:q([element(1, X) || X <- ets:table(E), 
@@ -3462,12 +3449,6 @@ lookup2(Config) when is_list(Config) ->
        <<"etsc(fun(E) ->
                 Q = qlc:q([element(1, X) || X <- ets:table(E), 
                                             is_record(X, r)]),
-                 [r] = qlc:e(Q),
-                 [r] = lookup_keys(Q)
-         end, [{keypos,1}], [#r{}])">>,
-       <<"etsc(fun(E) ->
-                Q = qlc:q([element(1, X) || X <- ets:table(E), 
-                                            {erlang,is_record}(X, r)]),
                  [r] = qlc:e(Q),
                  [r] = lookup_keys(Q)
          end, [{keypos,1}], [#r{}])">>
@@ -7927,15 +7908,23 @@ run_test(Config, Extra, {cres, Body, Opts, ExpectedCompileReturn}) ->
             ok
     end,
 
-    Ms = erlang:process_info(self(),messages),
-    After = {get(), pps(), ets:all(), Ms},
-    code:purge(Mod),
-    case {R, After} of
-        {ok, Before} -> ok;
-        _ -> expected({ok,Before}, {R,After}, SourceFile)
-    end;
+    wait_for_expected(R, Before, SourceFile, true),
+    code:purge(Mod);
 run_test(Config, Extra, Body) ->
     run_test(Config, Extra, {cres,Body,[]}).
+
+wait_for_expected(R, Before, SourceFile, Wait) ->
+    Ms = erlang:process_info(self(),messages),
+    After = {get(), pps(), ets:all(), Ms},
+    case {R, After} of
+        {ok, Before} ->
+            ok;
+        _ when Wait ->
+            timer:sleep(1000),
+            wait_for_expected(R, Before, SourceFile, false);
+        _ ->
+            expected({ok,Before}, {R,After}, SourceFile)
+    end.
 
 unload_pt() ->
     erlang:garbage_collect(), % get rid of references to qlc_pt...

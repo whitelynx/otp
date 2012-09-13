@@ -1,7 +1,7 @@
 /*
  * %CopyrightBegin%
  *
- * Copyright Ericsson AB 2001-2011. All Rights Reserved.
+ * Copyright Ericsson AB 2001-2012. All Rights Reserved.
  *
  * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
@@ -27,6 +27,7 @@
 #include "big.h"
 #include "error.h"
 #include "erl_thr_progress.h"
+#include "dtrace-wrapper.h"
 
 Hash erts_dist_table;
 Hash erts_node_table;
@@ -42,6 +43,8 @@ Sint erts_no_of_not_connected_dist_entries;
 
 DistEntry *erts_this_dist_entry;
 ErlNode *erts_this_node;
+char erts_this_node_sysname_BUFFER[256],
+    *erts_this_node_sysname = "uninitialized yet";
 
 static Uint node_entries;
 static Uint dist_entries;
@@ -702,6 +705,9 @@ erts_set_this_node(Eterm sysname, Uint creation)
     (void) hash_erase(&erts_node_table, (void *) erts_this_node);
     erts_this_node->sysname = sysname;
     erts_this_node->creation = creation;
+    erts_this_node_sysname = erts_this_node_sysname_BUFFER;
+    erts_snprintf(erts_this_node_sysname, sizeof(erts_this_node_sysname),
+                  "%T", sysname);
     (void) hash_put(&erts_node_table, (void *) erts_this_node);
 
     erts_smp_rwmtx_rwunlock(&erts_dist_table_rwmtx);
@@ -789,6 +795,9 @@ void erts_init_node_tables(void)
     erts_this_node->sysname			= am_Noname;
     erts_this_node->creation			= 0;
     erts_this_node->dist_entry			= erts_this_dist_entry;
+    erts_this_node_sysname = erts_this_node_sysname_BUFFER;
+    erts_snprintf(erts_this_node_sysname, sizeof(erts_this_node_sysname),
+                  "%T", erts_this_node->sysname);
 
     (void) hash_put(&erts_node_table, (void *) erts_this_node);
 
@@ -840,9 +849,6 @@ static Eterm AM_dist_references;
 static Eterm AM_node_references;
 static Eterm AM_system;
 static Eterm AM_timer;
-#ifdef HYBRID
-static Eterm AM_processes;
-#endif
 
 static void setup_reference_table(void);
 static Eterm reference_table_term(Uint **hpp, Uint *szp);
@@ -927,9 +933,6 @@ erts_get_node_and_dist_references(struct process *proc)
 	INIT_AM(node_references);
 	INIT_AM(timer);
 	INIT_AM(system);
-#ifdef HYBRID
-	INIT_AM(processes);
-#endif
 	references_atoms_need_init = 0;
     }
 
@@ -1292,30 +1295,25 @@ setup_reference_table(void)
 		SYSTEM_REF,
 		TUPLE2(&heap[0], AM_system, am_undefined));
 
-#ifdef HYBRID
-    /* Insert Heap */
-    insert_offheap(&erts_global_offheap,
-		   HEAP_REF,
-		   TUPLE2(&heap[0], AM_processes, am_undefined));
-#endif
     UnUseTmpHeapNoproc(3);
 
     /* Insert all processes */
-    for (i = 0; i < erts_max_processes; i++)
-	if (process_tab[i]) {
+    for (i = 0; i < erts_max_processes; i++) {
+	Process *proc = erts_pix2proc(i);
+	if (proc) {
 	    ErlMessage *msg;
 
 	    /* Insert Heap */
-	    insert_offheap(&(process_tab[i]->off_heap),
+	    insert_offheap(&(proc->off_heap),
 			   HEAP_REF,
-			   process_tab[i]->id);
+			   proc->id);
 	    /* Insert message buffers */
-	    for(hfp = process_tab[i]->mbuf; hfp; hfp = hfp->next)
+	    for(hfp = proc->mbuf; hfp; hfp = hfp->next)
 		insert_offheap(&(hfp->off_heap),
 			       HEAP_REF,
-			       process_tab[i]->id);
+			       proc->id);
 	    /* Insert msg msg buffers */
-	    for (msg = process_tab[i]->msg.first; msg; msg = msg->next) {
+	    for (msg = proc->msg.first; msg; msg = msg->next) {
 		ErlHeapFragment *heap_frag = NULL;
 		if (msg->data.attached) {
 		    if (is_value(ERL_MESSAGE_TERM(msg)))
@@ -1323,7 +1321,7 @@ setup_reference_table(void)
 		    else {
 			if (msg->data.dist_ext->dep)
 			    insert_dist_entry(msg->data.dist_ext->dep,
-					      HEAP_REF, process_tab[i]->id, 0);
+					      HEAP_REF, proc->id, 0);
 			if (is_not_nil(ERL_MESSAGE_TOKEN(msg)))
 			    heap_frag = erts_dist_ext_trailer(msg->data.dist_ext);
 		    }
@@ -1331,10 +1329,10 @@ setup_reference_table(void)
 		if (heap_frag)
 		    insert_offheap(&(heap_frag->off_heap),
 				   HEAP_REF,
-				   process_tab[i]->id);
+				   proc->id);
 	    }
 #ifdef ERTS_SMP
-	    for (msg = process_tab[i]->msg_inq.first; msg; msg = msg->next) {
+	    for (msg = proc->u.alive.msg_inq.first; msg; msg = msg->next) {
 		ErlHeapFragment *heap_frag = NULL;
 		if (msg->data.attached) {
 		    if (is_value(ERL_MESSAGE_TERM(msg)))
@@ -1342,7 +1340,7 @@ setup_reference_table(void)
 		    else {
 			if (msg->data.dist_ext->dep)
 			    insert_dist_entry(msg->data.dist_ext->dep,
-					      HEAP_REF, process_tab[i]->id, 0);
+					      HEAP_REF, proc->id, 0);
 			if (is_not_nil(ERL_MESSAGE_TOKEN(msg)))
 			    heap_frag = erts_dist_ext_trailer(msg->data.dist_ext);
 		    }
@@ -1350,21 +1348,22 @@ setup_reference_table(void)
 		if (heap_frag)
 		    insert_offheap(&(heap_frag->off_heap),
 				   HEAP_REF,
-				   process_tab[i]->id);
+				   proc->id);
 	    }
 #endif
 	    /* Insert links */
-	    if(process_tab[i]->nlinks)
-		insert_links(process_tab[i]->nlinks, process_tab[i]->id);
-	    if(process_tab[i]->monitors)
-		insert_monitors(process_tab[i]->monitors, process_tab[i]->id);
+	    if(proc->nlinks)
+		insert_links(proc->nlinks, proc->id);
+	    if(proc->monitors)
+		insert_monitors(proc->monitors, proc->id);
 	    /* Insert controller */
 	    {
-		DistEntry *dep = ERTS_PROC_GET_DIST_ENTRY(process_tab[i]);
+		DistEntry *dep = ERTS_PROC_GET_DIST_ENTRY(proc);
 		if (dep)
-		    insert_dist_entry(dep, CTRL_REF, process_tab[i]->id, 0);
+		    insert_dist_entry(dep, CTRL_REF, proc->id, 0);
 	    }
 	}
+    }
     
 #ifdef ERTS_SMP
     erts_foreach_sys_msg_in_q(insert_sys_msg);

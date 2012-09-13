@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2004-2011. All Rights Reserved.
+%% Copyright Ericsson AB 2004-2012. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -153,7 +153,7 @@ start_restricted_from_shell(Config) when is_list(Config) ->
 	comm_err(<<"begin init:stop() end.">>),
     ?line "exception exit: restricted shell does not allow init:stop()" = 
 	comm_err(<<"begin F = fun() -> init:stop() end, F() end.">>),
-    ?line "exception error: bad argument in an arithmetic expression" = 
+    ?line "exception error: an error occurred when evaluating an arithmetic expression" =
 	comm_err(<<"begin +a end.">>),
     ?line "exception exit: restricted shell does not allow a + b" = 
 	comm_err(<<"begin a+b end.">>),
@@ -816,9 +816,6 @@ otp_5916(Config) when is_list(Config) ->
 
         true = if is_record(#r1{},r1,3) -> true; true ->  false end,
         false = if is_record(#r2{},r1,3) -> true; true ->  false end,
-
-        true = if {erlang,is_record}(#r1{},r1,3) -> true; true ->  false end,
-        false = if {erlang,is_record}(#r2{},r1,3) -> true; true ->  false end,
 
         ok.">>,
     [ok] = scan(C),
@@ -2282,12 +2279,6 @@ otp_5990(doc) ->
 otp_5990(suite) -> [];
 otp_5990(Config) when is_list(Config) ->
     ?line [true] = 
-        scan(<<"rd(foo,{bar}), {erlang,is_record}(#foo{}, foo).">>),
-    ?line [3] =
-        scan(<<"rd(foo,{bar}), A = #foo{}, "
-               "{if {erlang,is_record}(A, foo) -> erlang; "
-               "true -> not_a_module end, length}([1,2,3]).">>),
-    ?line [true] = 
         scan(<<"rd('OrdSet', {orddata = {},ordtype = type}), "
                "S = #'OrdSet'{ordtype = {}}, "
                "if tuple(S#'OrdSet'.ordtype) -> true; true -> false end.">>),
@@ -2359,7 +2350,7 @@ otp_6554(Config) when is_list(Config) ->
         comm_err(<<"fun(X) -> not X end(a).">>),
     ?line "exception error: bad argument: a" = 
         comm_err(<<"fun(A, B) -> A orelse B end(a, b).">>),
-    ?line "exception error: bad argument in an arithmetic expression" = 
+    ?line "exception error: an error occurred when evaluating an arithmetic expression" =
         comm_err(<<"math:sqrt(2)/round(math:sqrt(0)).">>),
     ?line "exception error: interpreted function with arity 1 called with no arguments" = 
         comm_err(<<"fun(V) -> V end().">>),
@@ -2478,9 +2469,9 @@ otp_6554(Config) when is_list(Config) ->
                      "  receive {'EXIT', Pid, {{nocatch,foo},_}} -> ok end "
                      "end.">>),
 
-    ?line "exception error: bad argument in an arithmetic expression" = 
+    ?line "exception error: an error occurred when evaluating an arithmetic expression" =
         comm_err(<<"begin catch_exception(true), 1/0 end.">>),
-    ?line "exception error: bad argument in an arithmetic expression" = 
+    ?line "exception error: an error occurred when evaluating an arithmetic expression" =
         comm_err(<<"begin catch_exception(false), 1/0 end.">>),
     ?line "exception error: no function clause matching call to catch_exception/1" = 
         comm_err(<<"catch_exception(1).">>),
@@ -2637,7 +2628,7 @@ otp_8393(Config) when is_list(Config) ->
         prompt_err(<<"shell:prompt_func('> ').">>),
 
     ?line _ = shell:prompt_func(default),
-    ?line "exception error: bad argument in an arithmetic expression"++_ =
+    ?line "exception error: an error occurred when evaluating an arithmetic expression"++_ =
         prompt_err(<<"shell:prompt_func({shell_SUITE,prompt4}).">>),
 
     ?line _ = shell:prompt_func(default),
@@ -2710,7 +2701,7 @@ prompt3(L) ->
     integer_to_list(N).
 
 prompt4(_L) ->
-    erlang:apply({erlang,'/'}, [1,0]).
+    erlang:apply(fun erlang:'/'/2, [1,0]).
 
 prompt5(_L) ->
     [1050,1072,1082,1074,1086,32,1077,32,85,110,105,99,111,100,101,32,63].

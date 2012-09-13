@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2009-2010. All Rights Reserved.
+%% Copyright Ericsson AB 2009-2012. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -271,8 +271,8 @@ create_apps_list_ctrl(Panel, Sizer, Text) ->
     ListItem  = wxListItem:new(),
     wxListItem:setAlign(ListItem, ?wxLIST_FORMAT_LEFT),
     wxListItem:setText(ListItem, Text),
+    wxListItem:setWidth(ListItem, reltool_utils:get_column_width(ListCtrl)),
     wxListCtrl:insertColumn(ListCtrl, ?APPS_APP_COL, ListItem),
-    %% wxListCtrl:setColumnWidth(ListCtrl, ?APPS_APP_COL, ?APPS_APP_COL_WIDTH),
     wxListItem:destroy(ListItem),
 
     wxSizer:add(Sizer, ListCtrl,
@@ -292,7 +292,7 @@ create_deps_page(S, Derived) ->
 
     UsedByCtrl = create_mods_list_ctrl(Panel,
 				       Main,
-				       "Modules used by others",
+				       "Modules using this",
 				       " and their applications",
 				       undefined,
 				       undefined),
@@ -611,7 +611,7 @@ handle_event(#state{sys = Sys, app = App} = S, Wx) ->
             redraw_window(S2);
         #wx{userData = use_selected_vsn} ->
             %% Use selected version
-	    App2 = App#app{use_selected_vsn = true},
+	    App2 = App#app{use_selected_vsn = dir},
 	    {ok, App3} = reltool_sys_win:set_app(S#state.parent_pid, App2),
 	    S2 = S#state{app = App3},
 	    redraw_window(S2);
@@ -619,7 +619,8 @@ handle_event(#state{sys = Sys, app = App} = S, Wx) ->
             event = #wxCommand{type = command_radiobox_selected,
                                cmdString = ActiveDir}} ->
             %% Change app source
-	    S2 = change_version(S, App, ActiveDir),
+	    App2 = App#app{use_selected_vsn = dir},
+	    S2 = change_version(S, App2, ActiveDir),
             redraw_window(S2);
         #wx{userData = {mod_button, Action, ListCtrl},
             event = #wxCommand{type = command_button_clicked}} ->
@@ -942,11 +943,11 @@ redraw_config(#state{sys = #sys{incl_cond = GlobalIncl,
 		      LatestRadio,
 		      SelectedRadio,
 		      SourceBox,
-		      fun(true) ->
+		      fun(false) ->
+			      0;
+			 (_) ->
 			      reltool_utils:elem_to_index(ActiveDir,
-							  SortedDirs) - 1;
-			 (false) ->
-			      0
+							  SortedDirs) - 1
 		      end).
 
 redraw_double_box(Global, Local, GlobalRadio, LocalRadio, LocalBox, GetChoice) ->

@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2000-2010. All Rights Reserved.
+%% Copyright Ericsson AB 2000-2012. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -57,9 +57,11 @@ start_link(Owner, FileName, ModeList)
 do_start(Spawn, Owner, FileName, ModeList) ->
     Self = self(),
     Ref = make_ref(),
+    Utag = erlang:dt_spread_tag(true),
     Pid = 
 	erlang:Spawn(
 	  fun() ->
+		  erlang:dt_restore_tag(Utag),
 		  %% process_flag(trap_exit, true),
 		  case parse_options(ModeList) of
 		      {ReadMode, UnicodeMode, Opts} ->
@@ -84,6 +86,7 @@ do_start(Spawn, Owner, FileName, ModeList) ->
 			  exit(Reason1)
 		  end
 	  end),
+    erlang:dt_restore_tag(Utag),
     Mref = erlang:monitor(process, Pid),
     receive
 	{Ref, {error, _Reason} = Error} ->

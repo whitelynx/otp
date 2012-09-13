@@ -1,7 +1,7 @@
 #
 # %CopyrightBegin%
 #
-# Copyright Ericsson AB 2006-2010. All Rights Reserved.
+# Copyright Ericsson AB 2006-2012. All Rights Reserved.
 #
 # The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
@@ -63,7 +63,10 @@ MODULES =  \
 	dialyzer_plt \
 	dialyzer_races \
 	dialyzer_succ_typings \
+	dialyzer_timing \
 	dialyzer_typesig \
+	dialyzer_coordinator \
+	dialyzer_worker \
 	dialyzer_utils
 
 HRL_FILES= dialyzer.hrl dialyzer_gui_wx.hrl
@@ -86,7 +89,7 @@ APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 ifeq ($(NATIVE_LIBS_ENABLED),yes)
 ERL_COMPILE_FLAGS += +native
 endif
-ERL_COMPILE_FLAGS += +warn_exported_vars +warn_unused_import +warn_untyped_record +warn_missing_spec
+ERL_COMPILE_FLAGS += +warn_exported_vars +warn_unused_import +warn_untyped_record +warn_missing_spec +warnings_as_errors
 
 # ----------------------------------------------------
 # Targets
@@ -152,10 +155,10 @@ $(EBIN)/dialyzer_utils.beam: dialyzer.hrl
 include $(ERL_TOP)/make/otp_release_targets.mk
 
 release_spec: opt
-	$(INSTALL_DIR) $(RELSYSDIR)/src
+	$(INSTALL_DIR) "$(RELSYSDIR)/src"
 	$(INSTALL_DATA) $(ERL_FILES) $(HRL_FILES) $(EXTRA_FILES) \
-		$(RELSYSDIR)/src
-	$(INSTALL_DIR) $(RELSYSDIR)/ebin
-	$(INSTALL_DATA) $(INSTALL_FILES) $(RELSYSDIR)/ebin
+		"$(RELSYSDIR)/src"
+	$(INSTALL_DIR) "$(RELSYSDIR)/ebin"
+	$(INSTALL_DATA) $(INSTALL_FILES) "$(RELSYSDIR)/ebin"
 
 release_docs_spec:

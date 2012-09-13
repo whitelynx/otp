@@ -1,7 +1,7 @@
 /*
  * %CopyrightBegin%
  * 
- * Copyright Ericsson AB 1996-2011. All Rights Reserved.
+ * Copyright Ericsson AB 1996-2012. All Rights Reserved.
  * 
  * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
@@ -66,8 +66,7 @@
  *  input and output file descriptors (0 and 1). These descriptors
  *  (and the standard error descriptor 2) must NOT be closed
  *  explicitely by this program at termination (in UNIX it is
- *  taken care of by the operating system itself; in VxWorks
- *  it is taken care of by the spawn driver part of the Emulator).
+ *  taken care of by the operating system itself).
  *
  *  END OF FILE
  *
@@ -75,12 +74,6 @@
  *  that there is no process at the other end of the connection
  *  having the connection open for writing (end-of-file).
  *
- *  HARDWARE WATCHDOG
- *
- *  When used with VxWorks(with CPU40), the hardware
- *  watchdog is enabled, making sure that the system reboots
- *  even if the heart port program malfunctions or the system
- *  is completely overloaded.
  */
 
 #ifdef HAVE_CONFIG_H
@@ -93,18 +86,12 @@
 #include <fcntl.h>
 #include <process.h>
 #endif
-#ifdef VXWORKS
-#include "sys.h"
-#endif
 
 /*
  * Implement time correction using times() call even on Linuxes 
  * that can simulate gethrtime with clock_gettime, no use implementing
  * a phony gethrtime in this file as the time questions are so infrequent.
  */
-#if defined(CORRET_USING_TIMES) || defined(GETHRTIME_WITH_CLOCK_GETTIME)
-#  define HEART_CORRECT_USING_TIMES 1
-#endif
 
 #include <stdio.h>
 #include <stddef.h>
@@ -116,25 +103,13 @@
 #include <time.h>
 #include <errno.h>
 
-#ifdef VXWORKS
-#  include <vxWorks.h>
-#  include <ioLib.h>
-#  include <selectLib.h>
-#  include <netinet/in.h>
-#  include <rebootLib.h>
-#  include <sysLib.h> 
-#  include <taskLib.h>
-#  include <wdLib.h>
-#  include <taskHookLib.h>
-#  include <selectLib.h>
-#endif
-#if !defined(__WIN32__) && !defined(VXWORKS)
+#if !defined(__WIN32__)
 #  include <sys/types.h>
 #  include <netinet/in.h>
 #  include <sys/time.h>
 #  include <unistd.h>
 #  include <signal.h>
-#  if defined(HEART_CORRECT_USING_TIMES)
+#  if defined(CORRECT_USING_TIMES)
 #    include <sys/times.h>
 #    include <limits.h>
 #  endif
@@ -447,7 +422,8 @@ message_loop(erlin_fd, erlout_fd)
      */
     timestamp(&now);
     if (now > last_received + heart_beat_timeout) {
-		print_error("heart-beat time-out.");
+	print_error("heart-beat time-out, no activity for %lu seconds", 
+		    (unsigned long) (now - last_received));
 		return R_TIMEOUT;
     }
     /*
@@ -550,8 +526,7 @@ kill_old_erlang(void){
 	CloseHandle(erlh);
     }
 }
-#elif !defined(VXWORKS)
-/* Unix eh? */
+#else
 static void 
 kill_old_erlang(void){
     pid_t pid;
@@ -570,7 +545,7 @@ kill_old_erlang(void){
 	}
     }
 }
-#endif /* Not on VxWorks */
+#endif
 
 #ifdef __WIN32__
 void win_system(char *command)
@@ -653,7 +628,7 @@ do_terminate(reason)
   case R_ERROR:
   case R_CLOSED:
   default:
-#if defined(__WIN32__) /* Not VxWorks */
+#if defined(__WIN32__)
     {
       if(!cmd[0]) {
 	char *command = get_env(HEART_COMMAND_ENV);
@@ -1026,60 +1001,30 @@ time_t timestamp(time_t *res)
     return r;
 }
 
-#elif defined(VXWORKS)
+#elif defined(HAVE_GETHRTIME)  || defined(GETHRTIME_WITH_CLOCK_GETTIME)
 
-static WDOG_ID watchdog_id;
-static volatile unsigned elapsed;
-static WIND_TCB *this_task;
-/* A simple variable is enough to lock the time update, as the
-   watchdog is run at interrupt level and never preempted. */
-static volatile int lock_time; 
+#if defined(GETHRTIME_WITH_CLOCK_GETTIME)
+typedef long long SysHrTime;
 
-static void my_delete_hook(WIND_TCB *tcb) 
-{ 
-    if (tcb == this_task) {
-	wdDelete(watchdog_id);
-	watchdog_id = NULL;
-	taskDeleteHookDelete((FUNCPTR) &my_delete_hook);
+SysHrTime sys_gethrtime(void);
+
+SysHrTime sys_gethrtime(void)
+{
+    struct timespec ts;
+    long long result;
+    if (clock_gettime(CLOCK_MONOTONIC,&ts) != 0) {
+	print_error("Fatal, could not get clock_monotonic value, terminating! "
+		    "errno = %d\n", errno);
+	exit(1);
     }
+    result = ((long long) ts.tv_sec) * 1000000000LL + 
+	((long long) ts.tv_nsec);
+    return (SysHrTime) result;
 }
-
-static void my_wd_routine(int count)
-{
-    if (watchdog_id != NULL) {
-	++count;
-	if (!lock_time) {
-	    elapsed += count;
-	    count = 0;
-	}
-	wdStart(watchdog_id, sysClkRateGet(), 
-		(FUNCPTR) &my_wd_routine, count);
-    }
-}
-
-void init_timestamp(void)
-{
-    lock_time = 0;
-    elapsed = 0;
-    watchdog_id = wdCreate();
-    this_task = (WIND_TCB *) taskIdSelf();
-    taskDeleteHookAdd((FUNCPTR) &my_delete_hook);
-    wdStart(watchdog_id, sysClkRateGet(), 
-	    (FUNCPTR) &my_wd_routine, 0);
-}
-
-time_t timestamp(time_t *res)
-{
-    time_t r;
-    ++lock_time;
-    r = (time_t) elapsed;
-    --lock_time;
-    if (res != NULL)
-	*res = r;
-    return r;
-}
-   
-#elif defined(HAVE_GETHRTIME) 
+#else
+typedef hrtime_t SysHrTime;
+#define sys_gethrtime() gethrtime()
+#endif
 
 void init_timestamp(void)
 {
@@ -1087,14 +1032,14 @@ void init_timestamp(void)
 
 time_t timestamp(time_t *res)
 {
-    hrtime_t ht = gethrtime();
+    SysHrTime ht = sys_gethrtime();
     time_t r = (time_t) (ht / 1000000000);
     if (res != NULL)
 	*res = r;
     return r;
 }
 
-#elif defined(HEART_CORRECT_USING_TIMES)
+#elif defined(CORRECT_USING_TIMES)
 
 #  ifdef NO_SYSCONF
 #    include <sys/param.h>

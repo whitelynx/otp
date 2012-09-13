@@ -2,7 +2,7 @@
 
 # %CopyrightBegin%
 #
-# Copyright Ericsson AB 2010-2011. All Rights Reserved.
+# Copyright Ericsson AB 2010-2012. All Rights Reserved.
 #
 # The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
@@ -33,15 +33,9 @@ ifeq ($(WARN_UNUSED_WARS), true)
 ERL_COMPILE_FLAGS += +warn_unused_vars
 endif
 
-ifeq ($(shell erl -noshell -eval 'io:format("~4s", [erlang:system_info(otp_release)])' -s init stop), R14B)
-INETS_ERL_COMPILE_FLAGS += -D'OTP-R14B-COMPILER'
-endif
-
 INETS_APP_VSN_COMPILE_FLAGS = \
 	+'{parse_transform,sys_pre_attributes}' \
 	+'{attribute,insert,app_vsn,$(APP_VSN)}'
-
-INETS_FLAGS = -D'SERVER_SOFTWARE="$(APPLICATION)/$(VSN)"'
 
 INETS_ERL_COMPILE_FLAGS += \
 	-pa $(ERL_TOP)/lib/inets/ebin  \

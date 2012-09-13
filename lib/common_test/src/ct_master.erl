@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2006-2010. All Rights Reserved.
+%% Copyright Ericsson AB 2006-2012. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -25,6 +25,7 @@
 -export([run/1,run/3,run/4]).
 -export([run_on_node/2,run_on_node/3]).
 -export([run_test/1,run_test/2]).
+-export([basic_html/1]).
 
 -export([abort/0,abort/1,progress/0]).
 
@@ -277,7 +278,17 @@ abort(Node) when is_atom(Node) ->
 progress() ->
     call(progress).
 
-		
+%%%-----------------------------------------------------------------
+%%% @spec basic_html(Bool) -> ok
+%%%       Bool = true | false
+%%%
+%%% @doc If set to true, the ct_master logs will be written on a
+%%%      primitive html format, not using the Common Test CSS style
+%%%      sheet.
+basic_html(Bool) ->
+    application:set_env(common_test_master, basic_html, Bool),
+    ok.
+
 %%%-----------------------------------------------------------------
 %%% MASTER, runs on central controlling node.
 %%%-----------------------------------------------------------------

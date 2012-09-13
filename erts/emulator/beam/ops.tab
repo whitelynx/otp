@@ -1,7 +1,7 @@
 #
 # %CopyrightBegin%
 #
-# Copyright Ericsson AB 1997-2011. All Rights Reserved.
+# Copyright Ericsson AB 1997-2012. All Rights Reserved.
 #
 # The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
@@ -62,11 +62,8 @@ label L
 i_func_info I a a I
 int_code_end
 
-i_trace_breakpoint
-i_mtrace_breakpoint
+i_generic_breakpoint
 i_debug_breakpoint
-i_count_breakpoint
-i_time_breakpoint
 i_return_time_trace
 i_return_to_trace
 i_yield
@@ -522,7 +519,6 @@ apply_bif
 call_nif
 call_error_handler
 error_action_code
-call_traced_function
 return_trace
 
 #
@@ -885,6 +881,95 @@ call_ext_only u==0 u$func:erlang:yield/0 => i_yield | return
 call_ext u==3 u$func:erlang:hibernate/3 => i_hibernate
 call_ext_last u==3 u$func:erlang:hibernate/3 D => i_hibernate
 call_ext_only u==3 u$func:erlang:hibernate/3 => i_hibernate
+
+#
+# If VM probes are not enabled, we want to short-circult calls to
+# the dt tag BIFs to make them as cheap as possible.
+#
+
+%unless USE_VM_PROBES
+
+call_ext Arity u$func:erlang:dt_get_tag/0 => \
+    move a=am_undefined r
+call_ext_last Arity u$func:erlang:dt_get_tag/0 D => \
+    move a=am_undefined r | deallocate D | return
+call_ext_only Arity u$func:erlang:dt_get_tag/0 => \
+    move a=am_undefined r | return
+
+move Any r | call_ext Arity u$func:erlang:dt_put_tag/1 => \
+    move a=am_undefined r
+move Any r | call_ext_last Arity u$func:erlang:dt_put_tag/1 D => \
+    move a=am_undefined r | deallocate D | return
+move Any r | call_ext_only Arity u$func:erlang:dt_put_tag/1 => \
+    move a=am_undefined r | return
+call_ext Arity u$func:erlang:dt_put_tag/1 => \
+    move a=am_undefined r
+call_ext_last Arity u$func:erlang:dt_put_tag/1 D => \
+    move a=am_undefined r | deallocate D | return
+call_ext_only Arity u$func:erlang:dt_put_tag/1 => \
+    move a=am_undefined r | return
+
+call_ext Arity u$func:erlang:dt_get_tag_data/0 => \
+    move a=am_undefined r
+call_ext_last Arity u$func:erlang:dt_get_tag_data/0 D => \
+    move a=am_undefined r | deallocate D | return
+call_ext_only Arity u$func:erlang:dt_get_tag_data/0 => \
+    move a=am_undefined r | return
+
+move Any r | call_ext Arity u$func:erlang:dt_spread_tag/1 => \
+    move a=am_true r
+move Any r | call_ext_last Arity u$func:erlang:dt_spread_tag/1 D => \
+    move a=am_true r | deallocate D | return
+move Any r | call_ext_only Arity u$func:erlang:dt_spread_tag/1 => \
+    move a=am_true r | return
+call_ext Arity u$func:erlang:dt_spread_tag/1 => \
+    move a=am_true r
+call_ext_last Arity u$func:erlang:dt_spread_tag/1 D => \
+    move a=am_true r | deallocate D | return
+call_ext_only Arity u$func:erlang:dt_spread_tag/1 => \
+    move a=am_true r | return
+
+move Any r | call_ext Arity u$func:erlang:dt_restore_tag/1 => \
+    move a=am_true r
+move Any r | call_ext_last Arity u$func:erlang:dt_restore_tag/1 D => \
+    move a=am_true r | deallocate D | return
+move Any r | call_ext_only Arity u$func:erlang:dt_restore_tag/1 => \
+    move a=am_true r | return
+call_ext Arity u$func:erlang:dt_restore_tag/1 => \
+    move a=am_true r
+call_ext_last Arity u$func:erlang:dt_restore_tag/1 D => \
+    move a=am_true r | deallocate D | return
+call_ext_only Arity u$func:erlang:dt_restore_tag/1 => \
+    move a=am_true r | return
+
+move Any r | call_ext Arity u$func:erlang:dt_prepend_vm_tag_data/1 => \
+    move Any r
+move Any r | call_ext_last Arity u$func:erlang:dt_prepend_vm_tag_data/1 D => \
+    move Any r | deallocate D | return
+move Any r | call_ext_only Arity u$func:erlang:dt_prepend_vm_tag_data/1 => \
+    move Any r | return
+call_ext Arity u$func:erlang:dt_prepend_vm_tag_data/1 =>
+call_ext_last Arity u$func:erlang:dt_prepend_vm_tag_data/1 D => \
+    deallocate D | return
+call_ext_only Arity u$func:erlang:dt_prepend_vm_tag_data/1 => \
+    return
+
+move Any r | call_ext Arity u$func:erlang:dt_append_vm_tag_data/1 => \
+    move Any r
+move Any r | call_ext_last Arity u$func:erlang:dt_append_vm_tag_data/1 D => \
+    move Any r | deallocate D | return
+move Any r | call_ext_only Arity u$func:erlang:dt_append_vm_tag_data/1 => \
+    move Any r | return
+call_ext Arity u$func:erlang:dt_append_vm_tag_data/1 =>
+call_ext_last Arity u$func:erlang:dt_append_vm_tag_data/1 D => \
+    deallocate D | return
+call_ext_only Arity u$func:erlang:dt_append_vm_tag_data/1 => \
+    return
+
+# Can happen after one of the transformations above.
+move Discarded r | move Something r => move Something r
+
+%endif
 
 #
 # The general case for BIFs that have no special instructions.

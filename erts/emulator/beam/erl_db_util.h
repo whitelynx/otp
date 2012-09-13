@@ -209,7 +209,7 @@ typedef struct db_fixation {
  */
 
 typedef struct db_table_common {
-    erts_refc_t ref;          /* fixation counter and delete counter */
+    erts_refc_t ref;          /* fixation counter */
 #ifdef ERTS_SMP
     erts_smp_rwmtx_t rwlock;  /* rw lock on table */
     erts_smp_mtx_t fixlock;   /* Protects fixations,megasec,sec,microsec */
@@ -219,7 +219,7 @@ typedef struct db_table_common {
     Eterm owner;              /* Pid of the creator */
     Eterm heir;               /* Pid of the heir */
     UWord heir_data;          /* To send in ETS-TRANSFER (is_immed or (DbTerm*) */
-    SysTimeval heir_started;  /* To further identify the heir */
+    Uint64 heir_started_interval;  /* To further identify the heir */
     Eterm the_name;           /* an atom */
     Eterm id;                 /* atom | integer */
     DbTableMethod* meth;      /* table methods */

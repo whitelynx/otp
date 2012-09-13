@@ -2,7 +2,7 @@ dnl Process this file with autoconf to produce a configure script.
 
 dnl %CopyrightBegin%
 dnl
-dnl Copyright Ericsson AB 1998-2011. All Rights Reserved.
+dnl Copyright Ericsson AB 1998-2012. All Rights Reserved.
 dnl
 dnl The contents of this file are subject to the Erlang Public License,
 dnl Version 1.1, (the "License"); you may not use this file except in
@@ -225,6 +225,14 @@ AC_ARG_ENABLE(native-libs,
 AS_HELP_STRING([--enable-native-libs],
                [compile Erlang libraries to native code]))
 
+AC_ARG_WITH(dynamic-trace,
+AS_HELP_STRING([--with-dynamic-trace={dtrace|systemtap}],
+	       [specify use of dynamic trace framework, dtrace or systemtap])
+AS_HELP_STRING([--without-dynamic-trace], 
+               [don't enable any dynamic tracing (default)]))
+AC_ARG_ENABLE(vm-probes,
+AS_HELP_STRING([--enable-vm-probes],
+               [add dynamic trace probes to the Beam VM (only possible if --with-dynamic-trace is enabled, and then default)]))
 AC_ARG_WITH(javac,
 AS_HELP_STRING([--with-javac=JAVAC], [specify Java compiler to use])
 AS_HELP_STRING([--with-javac], [use a Java compiler if found (default)])

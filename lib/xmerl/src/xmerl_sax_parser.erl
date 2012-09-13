@@ -1,7 +1,7 @@
 %%--------------------------------------------------------------------
 %% %CopyrightBegin%
 %% 
-%% Copyright Ericsson AB 2008-2011. All Rights Reserved.
+%% Copyright Ericsson AB 2008-2012. All Rights Reserved.
 %% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -217,7 +217,7 @@ check_encoding_option(E) when E==utf8; E=={utf16,little}; E=={utf16,big};
 check_encoding_option(utf16) ->
     {utf16,big};
 check_encoding_option(E) ->
-    {error, io_lib:format("Charcter set ~p not supported", [E])}.
+    {error, io_lib:format("Character set ~p not supported", [E])}.
 
 %%----------------------------------------------------------------------
 %% Function: detect_charset(Xml, State)
@@ -279,6 +279,7 @@ convert_encoding(Enc) -> %% Just for 7,8 bit + utf8
     case string:to_lower(Enc) of
 	"utf-8" -> utf8;
 	"us-ascii" -> utf8;
+	"latin1" -> latin1;
 	"iso-8859-1" -> latin1; % Handle all iso-8859 as latin1
 	"iso-8859-2" -> latin1;
 	"iso-8859-3" -> latin1;

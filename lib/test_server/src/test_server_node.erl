@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2002-2011. All Rights Reserved.
+%% Copyright Ericsson AB 2002-2012. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -35,7 +35,6 @@
 
 -include("test_server_internal.hrl").
 -record(slave_info, {name,socket,client}).
--define(VXWORKS_ACCEPT_TIMEOUT,?ACCEPT_TIMEOUT).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%                                                                  %%%
@@ -71,14 +70,6 @@ start_remote_main_target(Parameters) ->
 
     lists:foreach(fun(T) -> maybe_reboot_target({TargetType,T}) end,
 		  [list_to_atom(TargetHost)|SlaveTargets]),
-
-    % Must give the targets a chance to reboot...
-    case TargetType of
-	vxworks ->
-	    receive after 15000 -> ok end;
-	_ ->
-	    ok
-    end,
 
     Cmd0 = get_main_target_start_command(TargetType,TargetHost,Naming,
 					 MasterNode,MasterCookie),
@@ -407,7 +398,7 @@ start_node_peer(SlaveName, OptList, From, TI) ->
     % Support for erl_crash_dump files..
     CrashFile = filename:join([TI#target_info.test_server_dir,
 			       "erl_crash_dump."++cast_to_list(SlaveName)]),
-    CrashArgs = lists:concat([" -env ERL_CRASH_DUMP ",CrashFile," "]),
+    CrashArgs = lists:concat([" -env ERL_CRASH_DUMP \"",CrashFile,"\" "]),
     FailOnError = start_node_get_option_value(fail_on_error, OptList, true),
     Pa = TI#target_info.test_server_dir,
     Prog0 = start_node_get_option_value(erl, OptList, default),
@@ -420,7 +411,7 @@ start_node_peer(SlaveName, OptList, From, TI) ->
     Cmd = lists:concat([Prog,
 			" -detached ",
 			TI#target_info.naming, " ", SlaveName,
-			" -pa ", Pa,
+			" -pa \"", Pa,"\"",
 			NodeStarted,
 			CrashArgs,
 			" ", Args]),
@@ -462,9 +453,6 @@ start_node_peer(SlaveName, OptList, From, TI) ->
 %%
 %% Slave nodes are started on a remote host if
 %% - the option remote is given when calling test_server:start_node/3
-%% or
-%% - the target type is vxworks, since only one erlang node
-%%   can be started on each vxworks host.
 %%
 start_node_slave(SlaveName, OptList, From, TI) ->
     SuppliedArgs = start_node_get_option_value(args, OptList, []),
@@ -472,9 +460,9 @@ start_node_slave(SlaveName, OptList, From, TI) ->
 
     CrashFile = filename:join([TI#target_info.test_server_dir,
 			       "erl_crash_dump."++cast_to_list(SlaveName)]),
-    CrashArgs = lists:concat([" -env ERL_CRASH_DUMP ",CrashFile," "]),
+    CrashArgs = lists:concat([" -env ERL_CRASH_DUMP \"",CrashFile,"\" "]),
     Pa = TI#target_info.test_server_dir,
-    Args = lists:concat([" -pa ", Pa, " ", SuppliedArgs, CrashArgs]),
+    Args = lists:concat([" -pa \"", Pa, "\" ", SuppliedArgs, CrashArgs]),
 
     Prog0 = start_node_get_option_value(erl, OptList, default),
     Prog = pick_erl_program(Prog0),
@@ -787,19 +775,6 @@ kill_node(SI,TI) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%% Platform specific code
 
-start_target(vxworks,TargetHost,Cmd) ->
-    case vxworks_client:open(TargetHost) of
-	{ok,P} ->
-	    case vxworks_client:send_data(P,Cmd,"start_erl called") of
-		{ok,_} -> 
-		    {ok,{vxworks,P},?VXWORKS_ACCEPT_TIMEOUT};
-		Error -> 
-		    Error
-	    end;
-	Error ->
-	    Error
-    end;
-
 start_target(unix,TargetHost,Cmd0) ->
     Cmd = 
 	case test_server_sup:hoststr() of
@@ -809,19 +784,9 @@ start_target(unix,TargetHost,Cmd0) ->
     open_port({spawn, Cmd}, [stream]),
     {ok,undefined,?ACCEPT_TIMEOUT}.
 
-maybe_reboot_target({vxworks,P}) when is_pid(P) ->
-    %% Reboot the vxworks card.
-    %% Client is also closed after this, even if reboot fails
-    vxworks_client:send_data_wait_for_close(P,"q");
-maybe_reboot_target({vxworks,T}) when is_atom(T) ->
-    %% Reboot the vxworks card.
-    %% Client is also closed after this, even if reboot fails
-    vxworks_client:reboot(T);
 maybe_reboot_target(_) ->
     {error, cannot_reboot_target}.
 
-close_target_client({vxworks,P}) ->
-    vxworks_client:close(P);
 close_target_client(undefined) ->
     ok.
 
@@ -830,11 +795,6 @@ close_target_client(undefined) ->
 %%
 %% Command for starting main target
 %% 
-get_main_target_start_command(vxworks,_TargetHost,Naming,
-			      _MasterNode,_MasterCookie) ->
-    "e" ++ Naming ++ " test_server -boot start_sasl"
-	" -sasl errlog_type error"
-	" -s test_server start " ++ test_server_sup:hoststr();
 get_main_target_start_command(unix,_TargetHost,Naming,
 			      _MasterNode,_MasterCookie) ->
     Prog = pick_erl_program(default),
@@ -845,9 +805,6 @@ get_main_target_start_command(unix,_TargetHost,Naming,
 %% 
 %% Command for starting slave nodes
 %% 
-get_slave_node_start_command(vxworks, _Prog, _MasterNode) ->
-    "e";
-    %"e-noinput -master " ++ MasterNode;
 get_slave_node_start_command(unix, Prog, MasterNode) ->
     cast_to_list(Prog) ++ " -detached -master " ++ MasterNode.
 
@@ -943,12 +900,23 @@ find_rel_suse_1(Rel, RootWc) ->
     end.
 
 find_rel_suse_2(Rel, RootWc) ->
-    Wc = RootWc ++ "_" ++ Rel,
-    case filelib:wildcard(Wc) of
-	[] ->
-	    [];
-	[R|_] ->
-	    [filename:join([R,"bin","erl"])]
+    RelDir = filename:dirname(RootWc),
+    Pat = filename:basename(RootWc ++ "_" ++ Rel) ++ ".*",
+    case file:list_dir(RelDir) of
+	{ok,Dirs} ->
+	    case lists:filter(fun(Dir) ->
+				      case re:run(Dir, Pat) of
+					  nomatch -> false;
+					  _       -> true
+				      end
+			      end, Dirs) of
+		[] ->
+		    [];
+		[R|_] ->
+		    [filename:join([RelDir,R,"bin","erl"])]
+	    end;
+	_ ->
+	    []
     end.
 
 %% suse_release() -> VersionString | none.

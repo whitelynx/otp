@@ -1,7 +1,7 @@
 %% 
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2004-2011. All Rights Reserved.
+%% Copyright Ericsson AB 2004-2012. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -110,9 +110,9 @@ process_msg(Msg, Domain, Addr, Port, State, NoteStore, Logger) ->
 	#message{version = 'version-2', vsn_hdr = Community, data = Data}
 	  when State#state.v2c =:= true ->
 	    HS = ?empty_msg_size + length(Community),
-	    (catch process_v1_v2c_msg('version-2', NoteStore, Msg, 
-				      Domain, Addr, Port, 
-				      Community, Data, HS, Logger));
+	    process_v1_v2c_msg('version-2', NoteStore, Msg, 
+			       Domain, Addr, Port, 
+			       Community, Data, HS, Logger);
 	     
 	%% Version 3
 	#message{version = 'version-3', vsn_hdr = H, data = Data}

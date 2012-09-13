@@ -2138,9 +2138,6 @@ erts_memory(int *print_to_p, void *print_to_arg, void *proc, Eterm earg)
 	    tmp = alcu_size(ERTS_ALC_A_EHEAP, NULL, 0);
 	}
 	tmp += erts_max_processes*sizeof(Process*);
-#ifdef HYBRID
-	tmp += erts_max_processes*sizeof(Process*);
-#endif
 	tmp += erts_bif_timer_memory_size();
 	tmp += erts_tot_link_lh_size();
 
@@ -2303,11 +2300,7 @@ erts_allocated_areas(int *print_to_p, void *print_to_arg, void *proc)
     values[i].name = "static";
     values[i].ui[0] = 
 	erts_max_ports*sizeof(Port)		/* Port table */
-	+ erts_timer_wheel_memory_size()	/* Timer wheel */
-#ifdef SYS_TMP_BUF_SIZE
-	+ SYS_TMP_BUF_SIZE		/* tmp_buf in sys on vxworks & ose */
-#endif
-	;
+	+ erts_timer_wheel_memory_size();	/* Timer wheel */
     i++;
 
     erts_atom_get_text_space_sizes(&reserved_atom_space, &atom_space);
@@ -3001,7 +2994,11 @@ reply_alloc_info(void *vair)
 	HRelease(rp, hp_end, hp);	    
     }
 
-    erts_queue_message(rp, &rp_locks, bp, msg, NIL);
+    erts_queue_message(rp, &rp_locks, bp, msg, NIL
+#ifdef USE_VM_PROBES
+		       , NIL
+#endif
+		       );
 
     if (air->req_sched == sched_id)
 	rp_locks &= ~ERTS_PROC_LOCK_MAIN;

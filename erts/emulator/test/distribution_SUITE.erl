@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 1997-2011. All Rights Reserved.
+%% Copyright Ericsson AB 1997-2012. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -98,19 +98,6 @@ end_per_testcase(Func, Config) when is_atom(Func), is_list(Config) ->
     Dog=?config(watchdog, Config),
     ?t:timetrap_cancel(Dog).
 
-%%% Don't be too hard on vxworks, the cross server gets nodedown
-%%% cause the card is too busy if we don't sleep a little between pings.
-sleep() ->
-    case os:type() of
-	vxworks ->
-	    receive
-	    after 10 ->
-		    ok
-	    end;
-	_ ->
-	    ok
-    end.
-
 ping(doc) ->
     ["Tests pinging a node in different ways."];
 ping(Config) when is_list(Config) ->
@@ -122,23 +109,21 @@ ping(Config) when is_list(Config) ->
     ?line Host = hostname(),
     ?line BadName = list_to_atom("__pucko__@" ++ Host),
     ?line io:format("Pinging ~s (assumed to not exist)", [BadName]),
-    ?line test_server:do_times(Times, 
-			       fun() -> pang = net_adm:ping(BadName),
-					sleep() 
+    ?line test_server:do_times(Times, fun() -> pang = net_adm:ping(BadName)
 			       end),
 
     %% Pings another node.
 
     ?line {ok, OtherNode} = start_node(distribution_SUITE_other),
     ?line io:format("Pinging ~s (assumed to exist)", [OtherNode]),
-    ?line test_server:do_times(Times, fun() -> pong = net_adm:ping(OtherNode),sleep() end),
+    ?line test_server:do_times(Times, fun() -> pong = net_adm:ping(OtherNode) end),
     ?line stop_node(OtherNode),
 
     %% Pings our own node many times.
 
     ?line Node = node(),
     ?line io:format("Pinging ~s (the same node)", [Node]),
-    ?line test_server:do_times(Times, fun() -> pong = net_adm:ping(Node),sleep() end),
+    ?line test_server:do_times(Times, fun() -> pong = net_adm:ping(Node) end),
 
     ok.
 
@@ -1890,7 +1875,7 @@ start_node(Name, Args, Rel) when is_atom(Name), is_list(Rel) ->
 	     end,
     test_server:start_node(Name, slave, 
 			   [{args,
-			     Args++" -setcookie "++Cookie++" -pa "++Pa}
+			     Args++" -setcookie "++Cookie++" -pa \""++Pa++"\""}
 			    | RelArg]);
 start_node(Config, Args, Rel) when is_list(Config), is_list(Rel) ->
     Name = list_to_atom((atom_to_list(?MODULE)

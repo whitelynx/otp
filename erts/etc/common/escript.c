@@ -1,7 +1,7 @@
 /*
  * %CopyrightBegin%
  *
- * Copyright Ericsson AB 2007-2010. All Rights Reserved.
+ * Copyright Ericsson AB 2007-2012. All Rights Reserved.
  *
  * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
@@ -377,7 +377,8 @@ main(int argc, char** argv)
     last_opt = argv;
 
 #ifdef __WIN32__
-    if (_stricmp(basename, "escript.exe") == 0) {
+    if ( (_stricmp(basename, "escript.exe") == 0)
+       ||(_stricmp(basename, "escript") == 0)) {
 #else
     if (strcmp(basename, "escript") == 0) {
 #endif

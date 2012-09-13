@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 1997-2011. All Rights Reserved.
+%% Copyright Ericsson AB 1997-2012. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -157,7 +157,6 @@ get_config_files() ->
     [TSConfig | case os:type() of
 		    {unix,_} -> ["ts.unix.config"];
 		    {win32,_} -> ["ts.win32.config"];
-		    vxworks -> ["ts.vxworks.config"];
 		    _ -> []
 		end].
 
@@ -229,7 +228,7 @@ make_command(Vars, Spec, State) ->
 	   %% uncomment the line below to disable exception formatting 
 	   %%	   " -test_server_format_exception false",
 	   " -boot start_sasl -sasl errlog_type error",
-	   " -pz ",Cwd,
+	   " -pz \"",Cwd,"\"",
 	   " -ct_test_vars ",TestVars,
 	   " -eval \"file:set_cwd(\\\"",TestDir,"\\\")\" "
 	   " -eval \"ct:run_test(", 
@@ -329,14 +328,13 @@ start_xterm(Command) ->
 path_separator() ->
     case os:type() of
 	{win32, _} -> ";";
-	{unix, _}  -> ":";
-	vxworks ->    ":"
+	{unix, _}  -> ":"
     end.
 
 
-make_common_test_args(Args0, Options, _Vars) ->
+make_common_test_args(Args0, Options0, _Vars) ->
     Trace = 
-	case lists:keysearch(trace,1,Options) of
+	case lists:keysearch(trace,1,Options0) of
 	    {value,{trace,TI}} when is_tuple(TI); is_tuple(hd(TI)) ->
 		ok = file:write_file(?tracefile,io_lib:format("~p.~n",[TI])),
 		[{ct_trace,?tracefile}];
@@ -348,7 +346,7 @@ make_common_test_args(Args0, Options, _Vars) ->
 		[]
 	end,
     Cover = 
-	case lists:keysearch(cover,1,Options) of
+	case lists:keysearch(cover,1,Options0) of
 	    {value,{cover, App, none, _Analyse}} ->
 		io:format("No cover file found for ~p~n",[App]),
 		[];
@@ -358,7 +356,7 @@ make_common_test_args(Args0, Options, _Vars) ->
 		[]
 	end,
 
-    Logdir = case lists:keysearch(logdir, 1, Options) of
+    Logdir = case lists:keysearch(logdir, 1, Options0) of
 		  {value,{logdir, _}} ->
 		      [];
 		  false ->
@@ -373,15 +371,16 @@ make_common_test_args(Args0, Options, _Vars) ->
 			{scale_timetraps, true}]
 	       end,
 
-    ConfigPath = case {os:getenv("TEST_CONFIG_PATH"),
-		       lists:keysearch(config, 1, Options)} of
-		     {false,{value, {config, Path}}} ->
-			 Path;
-		     {false,false} ->
-			 "../test_server";
-		     {Path,_} ->
-			 Path
-		 end,
+    {ConfigPath,
+     Options} = case {os:getenv("TEST_CONFIG_PATH"),
+		      lists:keysearch(config, 1, Options0)} of
+		    {_,{value, {config, Path}}} ->
+			{Path,lists:keydelete(config, 1, Options0)};
+		    {false,false} ->
+			{"../test_server",Options0};
+		    {Path,_} ->
+			{Path,Options0}
+		end,
     ConfigFiles = [{config,[filename:join(ConfigPath,File)
 			    || File <- get_config_files()]}],
     io_lib:format("~100000p",[Args0++Trace++Cover++Logdir++

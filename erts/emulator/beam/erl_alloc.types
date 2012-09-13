@@ -1,7 +1,7 @@
 #
 # %CopyrightBegin%
 #
-# Copyright Ericsson AB 2003-2011. All Rights Reserved.
+# Copyright Ericsson AB 2003-2012. All Rights Reserved.
 #
 # The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
@@ -265,6 +265,7 @@ type	CPU_GRPS_MAP	LONG_LIVED	SYSTEM		cpu_groups_map
 type	AUX_WORK_TMO	LONG_LIVED	SYSTEM		aux_work_timeouts
 type	MISC_AUX_WORK_Q	LONG_LIVED	SYSTEM		misc_aux_work_q
 type	CODE_IX_LOCK_Q  SHORT_LIVED	SYSTEM		code_ix_lock_q
+type	PROC_INTERVAL	LONG_LIVED	SYSTEM		process_interval
 
 +if threads_no_smp
 # Need thread safe allocs, but std_alloc and fix_alloc are not;
@@ -293,7 +294,6 @@ type	PORT_LOCK	STANDARD	SYSTEM		port_lock
 type	DRIVER_LOCK	STANDARD	SYSTEM		driver_lock
 type	XPORTS_LIST	SHORT_LIVED	SYSTEM		extra_port_list
 type	PROC_LCK_WTR	LONG_LIVED	SYSTEM		proc_lock_waiter
-type	PROC_LCK_QS	LONG_LIVED	SYSTEM		proc_lock_queues
 type	RUNQ_BLNS	LONG_LIVED	SYSTEM		run_queue_balancing
 type	THR_PRGR_IDATA	LONG_LIVED	SYSTEM		thr_prgr_internal_data
 type	THR_PRGR_DATA	LONG_LIVED	SYSTEM		thr_prgr_data
@@ -319,24 +319,13 @@ type	ACTIVE_PROCS	STANDARD	PROCESSES	active_procs
 
 +endif
 
-+if hybrid
-
-type	ACTIVE_PROCS	STANDARD	PROCESSES	active_procs
-
-# Used for all memory involved in incremental gc of the message area
-# that is, young (x2) and old generation, forwarding pointers and blackmap
-type	MESSAGE_AREA	LONG_LIVED	PROCESSES	message_area
-
-# Used in MA_STACK (global.h) and INC_STORAGE (erl_nmgc.h)
-type	OBJECT_STACK	STANDARD	PROCESSES	object_stack
-
-+endif
-
 +if smp
 type	SL_PTIMER	SHORT_LIVED	SYSTEM		ptimer_sl
 type	LL_PTIMER	STANDARD	SYSTEM		ptimer_ll
 type	SYS_MSG_Q	SHORT_LIVED	PROCESSES	system_messages_queue
 type	FP_EXCEPTION	LONG_LIVED	SYSTEM		fp_exception
+type	LL_MPATHS	LONG_LIVED	SYSTEM		ll_migration_paths
+type	SL_MPATHS	SHORT_LIVED	SYSTEM		sl_migration_paths
 +endif
 
 +if hipe
@@ -427,30 +416,6 @@ type	PUTENV_STR	SYSTEM		SYSTEM		putenv_string
 type	WAITER_OBJ	LONG_LIVED	SYSTEM		waiter_object
 type	ENVIRONMENT	SYSTEM		SYSTEM		environment
 type	CON_VPRINTF_BUF	TEMPORARY	SYSTEM		con_vprintf_buf
-
-+endif
-
-+if vxworks
-
-type	SYS_TMP_BUF	LONG_LIVED	SYSTEM		sys_tmp_buf
-type	PEND_DATA	SYSTEM		SYSTEM		pending_data
-type	FD_TAB		LONG_LIVED	SYSTEM		fd_tab
-type	FD_ENTRY_BUF	SYSTEM		SYSTEM		fd_entry_buf
-
-+endif
-
-+if ose
-
-type	SYS_TMP_BUF	LONG_LIVED	SYSTEM		sys_tmp_buf
-type	PUTENV_STR	SYSTEM		SYSTEM		putenv_string
-type	GETENV_STR	SYSTEM		SYSTEM		getenv_string
-type	GETENV_STATE	SYSTEM		SYSTEM		getenv_state
-type	SIG_ENTRY	SYSTEM		SYSTEM		sig_entry
-type	DRIVER_DATA	SYSTEM		SYSTEM		driver_data
-type	PGM_TAB		SYSTEM		SYSTEM		pgm_tab
-type	PGM_ENTRY	SYSTEM		SYSTEM		pgm_entry
-type	PRT_TAB		SYSTEM		SYSTEM		prt_tab
-type	PRT_ENTRY	SYSTEM		SYSTEM		prt_entry
 
 +endif
 

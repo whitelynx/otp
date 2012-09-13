@@ -224,8 +224,9 @@ Export ets_select_continue_exp;
 static Export ets_delete_continue_exp;
 	
 static void
-free_dbtable(DbTable* tb)
+free_dbtable(void *vtb)
 {
+    DbTable *tb = (DbTable *) vtb;
 #ifdef HARDDEBUG
 	if (erts_smp_atomic_read_nob(&tb->common.memory_size) != sizeof(DbTable)) {
 	    erts_fprintf(stderr, "ets: free_dbtable memory remain=%ld fix=%x\n",
@@ -251,19 +252,7 @@ free_dbtable(DbTable* tb)
 	ASSERT(is_immed(tb->common.heir_data));
 	erts_db_free(ERTS_ALC_T_DB_TABLE, tb, (void *) tb, sizeof(DbTable));
 	ERTS_ETS_MISC_MEM_ADD(-sizeof(DbTable));
-	ERTS_SMP_MEMORY_BARRIER;
 }
-
-#ifdef ERTS_SMP
-static void
-chk_free_dbtable(void *vtb)
-{
-    DbTable * tb = (DbTable *) vtb;
-    ERTS_THR_MEMORY_BARRIER;
-    if (erts_refc_dectest(&tb->common.ref, 0) == 0)
-	free_dbtable(tb);
-}
-#endif
 
 static void schedule_free_dbtable(DbTable* tb)
 {
@@ -275,15 +264,10 @@ static void schedule_free_dbtable(DbTable* tb)
      *               need to unlock the table lock after this
      *               function has returned).
      */
-#ifdef ERTS_SMP
-    int scheds = erts_get_max_no_executing_schedulers();
-    ASSERT(scheds >= 1);
     ASSERT(erts_refc_read(&tb->common.ref, 0) == 0);
-    erts_refc_init(&tb->common.ref, scheds);
-    erts_schedule_multi_misc_aux_work(0, scheds, chk_free_dbtable, tb);
-#else
-    free_dbtable(tb);
-#endif
+    erts_schedule_thr_prgr_later_op(free_dbtable,
+				    (void *) tb,
+				    &tb->release.data);
 }
 
 static ERTS_INLINE void db_init_lock(DbTable* tb, int use_frequent_read_lock,
@@ -542,10 +526,6 @@ static int remove_named_tab(DbTable *tb, int have_lock)
 							      &rwlock);
 #ifdef ERTS_SMP
     if (!have_lock && erts_smp_rwmtx_tryrwlock(rwlock) == EBUSY) {
-	/*
-	 * We keep our increased refc over this op in order to
-	 * prevent the table from disapearing.
-	 */
 	db_unlock(tb, LCK_WRITE);
 	erts_smp_rwmtx_rwlock(rwlock);
 	db_lock(tb, LCK_WRITE);
@@ -1481,7 +1461,7 @@ BIF_RETTYPE ets_new_2(BIF_ALIST_2)
 				      "** Too many db tables **\n");
 	free_heir_data(tb);
 	tb->common.meth->db_free_table(tb);
-	free_dbtable(tb);
+	free_dbtable((void *) tb);
 	BIF_ERROR(BIF_P, SYSTEM_LIMIT);
     }
 
@@ -2849,7 +2829,7 @@ void init_db(void)
     else
 	db_max_tabs = user_requested_db_max_tabs;
 
-    bits = erts_fit_in_bits(db_max_tabs-1);
+    bits = erts_fit_in_bits_int32(db_max_tabs-1);
     if (bits > SMALL_BITS) {
 	erl_exit(1,"Max limit for ets tabled too high %u (max %u).",
 		 db_max_tabs, ((Uint)1)<<SMALL_BITS);
@@ -3098,7 +3078,7 @@ retry:
     if (to_proc == NULL) {
 	return 0; /* heir not alive, table still mine */
     }
-    if (erts_cmp_timeval(&to_proc->started, &tb->common.heir_started) != 0) {
+    if (to_proc->started_interval != tb->common.heir_started_interval) {
 	erts_smp_proc_unlock(to_proc, to_locks);
 	return 0; /* heir dead and pid reused, table still mine */
     }
@@ -3494,14 +3474,14 @@ static void set_heir(Process* me, DbTable* tb, Eterm heir, UWord heir_data)
 	return;
     }
     if (heir == me->id) {
-	tb->common.heir_started = me->started;
+	erts_ensure_later_proc_interval(me->started_interval);
+	tb->common.heir_started_interval = me->started_interval;
     }
     else {
-	Process* heir_proc= erts_pid2proc_opt(me, ERTS_PROC_LOCK_MAIN, heir,
-					      0, ERTS_P2P_FLG_SMP_INC_REFC);
+	Process* heir_proc= erts_proc_lookup(heir);
 	if (heir_proc != NULL) {
-	    tb->common.heir_started = heir_proc->started;
-	    erts_smp_proc_dec_refc(heir_proc);
+	    erts_ensure_later_proc_interval(heir_proc->started_interval);
+	    tb->common.heir_started_interval = heir_proc->started_interval;
 	} else {
 	    tb->common.heir = am_none;
 	}

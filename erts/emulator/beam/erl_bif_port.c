@@ -1,7 +1,7 @@
 /*
  * %CopyrightBegin%
  *
- * Copyright Ericsson AB 2001-2011. All Rights Reserved.
+ * Copyright Ericsson AB 2001-2012. All Rights Reserved.
  *
  * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
@@ -40,6 +40,7 @@
 #include "external.h"
 #include "packet_parser.h"
 #include "erl_bits.h"
+#include "dtrace-wrapper.h"
 
 static int open_port(Process* p, Eterm name, Eterm settings, int *err_nump);
 static byte* convert_environment(Process* p, Eterm env);
@@ -264,7 +265,7 @@ port_call(Process* c_p, Eterm arg1, Eterm arg2, Eterm arg3)
     Eterm res;
     Sint result_size;
     Eterm *hp;
-    Eterm *hp_end;              /* To satisfy hybrid heap architecture */
+    Eterm *hp_end;
     unsigned ret_flags = 0U;
     int fpe_was_unmasked;
 
@@ -343,6 +344,16 @@ port_call(Process* c_p, Eterm arg1, Eterm arg2, Eterm arg3)
 		 __FILE__, __LINE__, endp - (bytes + size));
     }
     erts_smp_proc_unlock(c_p, ERTS_PROC_LOCK_MAIN);
+#ifdef USE_VM_PROBES
+    if (DTRACE_ENABLED(driver_call)) {
+        DTRACE_CHARBUF(process_str, DTRACE_TERM_BUF_SIZE);
+        DTRACE_CHARBUF(port_str, DTRACE_TERM_BUF_SIZE);
+
+        dtrace_pid_str(p->connected, process_str);
+        dtrace_port_str(p, port_str);
+        DTRACE5(driver_call, process_str, port_str, p->name, op, real_size);
+    }
+#endif
     prc  = (char *) port_resp;
     fpe_was_unmasked = erts_block_fpe();
     ret = drv->call((ErlDrvData)p->drv_data, 
@@ -539,6 +550,18 @@ BIF_RETTYPE port_connect_2(BIF_ALIST_2)
 
     prt->connected = pid; /* internal pid */
     erts_smp_port_unlock(prt);
+#ifdef USE_VM_PROBES
+    if (DTRACE_ENABLED(port_connect)) {
+        DTRACE_CHARBUF(process_str, DTRACE_TERM_BUF_SIZE);
+        DTRACE_CHARBUF(port_str, DTRACE_TERM_BUF_SIZE);
+        DTRACE_CHARBUF(newprocess_str, DTRACE_TERM_BUF_SIZE);
+
+        dtrace_pid_str(prt->connected, process_str);
+        erts_snprintf(port_str, sizeof(port_str), "%T", prt->id);
+        dtrace_proc_str(rp, newprocess_str);
+        DTRACE4(port_connect, process_str, port_str, prt->name, newprocess_str);
+    }
+#endif
     BIF_RET(am_true);
 }
 
@@ -695,7 +718,7 @@ open_port(Process* p, Eterm name, Eterm settings, int *err_nump)
 		} else if (option == am_arg0) {
 		    char *a0;
 
-		    if ((a0 = erts_convert_filename_to_native(*tp, ERTS_ALC_T_TMP, 1)) == NULL) {
+		    if ((a0 = erts_convert_filename_to_native(*tp, NULL, 0, ERTS_ALC_T_TMP, 1, 1, NULL)) == NULL) {
 			goto badarg;
 		    }
 		    if (opts.argv == NULL) {
@@ -822,7 +845,7 @@ open_port(Process* p, Eterm name, Eterm settings, int *err_nump)
 		goto badarg;
 	    }
 	    name = tp[1];
-	    if ((name_buf = erts_convert_filename_to_native(name,ERTS_ALC_T_TMP,0)) == NULL) {
+	    if ((name_buf = erts_convert_filename_to_native(name, NULL, 0, ERTS_ALC_T_TMP,0,1, NULL)) == NULL) {
 		goto badarg;
 	    }
 	    opts.spawn_type = ERTS_SPAWN_EXECUTABLE;
@@ -886,7 +909,7 @@ open_port(Process* p, Eterm name, Eterm settings, int *err_nump)
 	    }
 	    opts.wd = (char *) dir;
 	} else {
-	    if ((opts.wd = erts_convert_filename_to_native(edir,ERTS_ALC_T_TMP,0)) == NULL) {
+	    if ((opts.wd = erts_convert_filename_to_native(edir, NULL, 0, ERTS_ALC_T_TMP,0,1,NULL)) == NULL) {
 		goto badarg;
 	    }
 	}
@@ -904,7 +927,16 @@ open_port(Process* p, Eterm name, Eterm settings, int *err_nump)
     erts_smp_proc_unlock(p, ERTS_PROC_LOCK_MAIN);
 
     port_num = erts_open_driver(driver, p->id, name_buf, &opts, err_nump);
+#ifdef USE_VM_PROBES
+    if (port_num >= 0 && DTRACE_ENABLED(port_open)) {
+        DTRACE_CHARBUF(process_str, DTRACE_TERM_BUF_SIZE);
+        DTRACE_CHARBUF(port_str, DTRACE_TERM_BUF_SIZE);
 
+        dtrace_proc_str(p, process_str);
+        erts_snprintf(port_str, sizeof(port_str), "%T", erts_port[port_num].id);
+        DTRACE3(port_open, process_str, name_buf, port_str);
+    }
+#endif
     erts_smp_proc_lock(p, ERTS_PROC_LOCK_MAIN);
 
     if (port_num < 0) {
@@ -968,7 +1000,7 @@ static char **convert_args(Eterm l)
     pp[i++] = erts_default_arg0;
     while (is_list(l)) {
 	str = CAR(list_val(l));
-	if ((b = erts_convert_filename_to_native(str,ERTS_ALC_T_TMP,1)) == NULL) {
+	if ((b = erts_convert_filename_to_native(str,NULL,0,ERTS_ALC_T_TMP,1,1,NULL)) == NULL) {
 	    int j;
 	    for (j = 1; j < i; ++j)
 		erts_free(ERTS_ALC_T_TMP, pp[j]);
@@ -1003,8 +1035,9 @@ static byte* convert_environment(Process* p, Eterm env)
     Eterm* hp;
     Uint heap_size;
     int n;
-    Uint size;
+    Sint size;
     byte* bytes;
+    int encoding = erts_get_native_filename_encoding();
 
     if ((n = list_length(env)) < 0) {
 	return NULL;
@@ -1047,7 +1080,8 @@ static byte* convert_environment(Process* p, Eterm env)
     if (is_not_nil(env)) {
 	goto done;
     }
-    if (erts_iolist_size(all, &size)) {
+
+    if ((size = erts_native_filename_need(all,encoding)) < 0) {
 	goto done;
     }
 
@@ -1055,7 +1089,7 @@ static byte* convert_environment(Process* p, Eterm env)
      * Put the result in a binary (no risk for a memory leak that way).
      */
     (void) erts_new_heap_binary(p, NULL, size, &bytes);
-    io_list_to_buf(all, (char*)bytes, size);
+    erts_native_filename_put(all,encoding,bytes);
 
  done:
     erts_free(ERTS_ALC_T_TMP, temp_heap);

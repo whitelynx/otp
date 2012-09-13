@@ -1,7 +1,7 @@
 #
 # %CopyrightBegin%
 #
-# Copyright Ericsson AB 1996-2011. All Rights Reserved.
+# Copyright Ericsson AB 1996-2012. All Rights Reserved.
 #
 # The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
@@ -99,8 +99,6 @@ bif erlang:garbage_collect/0
 bif 'erl.system':garbage_collect/0	ebif_garbage_collect_0
 bif erlang:garbage_collect/1
 bif 'erl.system':garbage_collect/1	ebif_garbage_collect_1
-bif erlang:garbage_collect_message_area/0
-bif 'erl.system':garbage_collect_message_area/0	ebif_garbage_collect_message_area_0
 bif erlang:get/0
 bif 'erl.lang.proc.pdict':get/0		ebif_get_0
 bif erlang:get/1
@@ -115,6 +113,8 @@ bif erlang:halt/0
 bif 'erl.lang.system':halt/0		ebif_halt_0
 bif erlang:halt/1
 bif 'erl.lang.system':halt/1		ebif_halt_1
+bif erlang:halt/2
+bif 'erl.lang.system':halt/2		ebif_halt_2
 bif erlang:phash/2
 bif erlang:phash2/1
 bif erlang:phash2/2
@@ -810,6 +810,23 @@ bif erlang:check_old_code/1
 #
 bif erlang:universaltime_to_posixtime/1
 bif erlang:posixtime_to_universaltime/1
+
+#
+# New in R15B01
+#
+
+# The dtrace BIF's are always present, but give dummy results if dynamic trace is not enabled in the build
+bif erlang:dt_put_tag/1
+bif erlang:dt_get_tag/0
+bif erlang:dt_get_tag_data/0
+bif erlang:dt_spread_tag/1
+bif erlang:dt_restore_tag/1
+
+# These are dummies even with enabled dynamic trace unless vm probes are enabled. 
+# They are also internal, for dtrace tags sent to the VM's own drivers (efile)
+bif erlang:dt_prepend_vm_tag_data/1
+bif erlang:dt_append_vm_tag_data/1
+
 
 #
 # New in R16B.

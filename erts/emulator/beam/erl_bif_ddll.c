@@ -1,7 +1,7 @@
 /*
  * %CopyrightBegin%
  * 
- * Copyright Ericsson AB 2006-2011. All Rights Reserved.
+ * Copyright Ericsson AB 2006-2012. All Rights Reserved.
  * 
  * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
@@ -45,6 +45,7 @@
 #include "big.h"
 #include "dist.h"
 #include "erl_version.h"
+#include "dtrace-wrapper.h"
 
 #ifdef ERTS_SMP
 #define DDLL_SMP 1
@@ -367,13 +368,11 @@ BIF_RETTYPE erl_ddll_try_load_3(BIF_ALIST_3)
 #endif
 	for (j = 0; j < erts_max_ports; j++) {
 	    Port* prt = &erts_port[j];
-#ifdef DDLL_SMP
 	    erts_smp_port_state_lock(prt);
-#endif 
 	    if (!(prt->status & FREE_PORT_FLAGS) &&
 		prt->drv_ptr->handle == dh) {
-#if DDLL_SMP
 		erts_smp_atomic_inc_nob(&prt->refc);
+#if DDLL_SMP
 		/* Extremely rare spinlock */
 		while(prt->status & ERTS_PORT_SFLG_INITIALIZING) {
 		       erts_smp_port_state_unlock(prt);
@@ -597,13 +596,11 @@ done:
 #endif
 	for (j = 0; j < erts_max_ports; j++) {
 	    Port* prt = &erts_port[j];
-#if DDLL_SMP
 	    erts_smp_port_state_lock(prt);
-#endif
 	    if (!(prt->status &  FREE_PORT_FLAGS) 
 		&& prt->drv_ptr->handle == dh) {
-#if DDLL_SMP
 		erts_smp_atomic_inc_nob(&prt->refc);
+#if DDLL_SMP
 		/* Extremely rare spinlock */
 		while(prt->status & ERTS_PORT_SFLG_INITIALIZING) {
 		       erts_smp_port_state_unlock(prt);
@@ -1059,13 +1056,11 @@ void erts_ddll_proc_dead(Process *p, ErtsProcLocks plocks)
 #endif
 		    for (j = 0; j < erts_max_ports; j++) {
 			Port* prt = &erts_port[j];
-#if DDLL_SMP
 			erts_smp_port_state_lock(prt);
-#endif
 			if (!(prt->status & FREE_PORT_FLAGS) &&
 			    prt->drv_ptr->handle == dh) {
-#if DDLL_SMP
 			    erts_smp_atomic_inc_nob(&prt->refc);
+#if DDLL_SMP
 			    while(prt->status & ERTS_PORT_SFLG_INITIALIZING) {
 				erts_smp_port_state_unlock(prt);
 				erts_smp_port_state_lock(prt);
@@ -1647,6 +1642,7 @@ static int do_unload_driver_entry(DE_Handle *dh, Eterm *save_name)
 	       diver_list lock here!*/
 	    if (q->finish) {
 		int fpe_was_unmasked = erts_block_fpe();
+		DTRACE1(driver_finish, q->name);
 		(*(q->finish))();
 		erts_unblock_fpe(fpe_was_unmasked);
 	    }
@@ -1760,7 +1756,11 @@ static void notify_proc(Process *proc, Eterm ref, Eterm driver_name, Eterm type,
 	hp += REF_THING_SIZE;
 	mess = TUPLE5(hp,type,r,am_driver,driver_name,tag);
     }
-    erts_queue_message(proc, &rp_locks, bp, mess, am_undefined);
+    erts_queue_message(proc, &rp_locks, bp, mess, am_undefined
+#ifdef USE_VM_PROBES
+		       , NIL
+#endif
+		       );
     erts_smp_proc_unlock(proc, rp_locks);
     ERTS_SMP_CHK_NO_PROC_LOCKS;
 }

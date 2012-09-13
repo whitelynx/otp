@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 1999-2011. All Rights Reserved.
+%% Copyright Ericsson AB 1999-2012. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -1307,41 +1307,30 @@ guard(Config) when is_list(Config) ->
                    foo;
                t3(A) when erlang:is_record(A, {apa}) ->
                    foo;
-               t3(A) when {erlang,is_record}(A, {apa}) ->
-                   foo;
                t3(A) when is_record(A, {apa}, 1) ->
                    foo;
                t3(A) when erlang:is_record(A, {apa}, 1) ->
                    foo;
-               t3(A) when {erlang,is_record}(A, {apa}, 1) ->
-                   foo;
                t3(A) when is_record(A, apa, []) ->
                    foo;
                t3(A) when erlang:is_record(A, apa, []) ->
-                   foo;
-               t3(A) when {erlang,is_record}(A, apa, []) ->
                    foo;
                t3(A) when record(A, apa) ->
                    foo;
                t3(A) when is_record(A, apa) ->
                    foo;
                t3(A) when erlang:is_record(A, apa) ->
-                   foo;
-               t3(A) when {erlang,is_record}(A, apa) ->
                    foo.
             ">>,
             [warn_unused_vars, nowarn_obsolete_guard],
             {errors,[{2,erl_lint,illegal_guard_expr},
-                     {4,erl_lint,illegal_guard_expr},
-                     {6,erl_lint,illegal_guard_expr},
-                     {8,erl_lint,illegal_guard_expr},
+		     {4,erl_lint,illegal_guard_expr},
+		     {6,erl_lint,illegal_guard_expr},
+		     {8,erl_lint,illegal_guard_expr},
 		     {10,erl_lint,illegal_guard_expr},
 		     {12,erl_lint,illegal_guard_expr},
-		     {14,erl_lint,illegal_guard_expr},
-		     {16,erl_lint,illegal_guard_expr},
-		     {18,erl_lint,illegal_guard_expr},
-		     {20,erl_lint,illegal_guard_expr}],
-             []}},
+		     {14,erl_lint,illegal_guard_expr}],
+	     []}},
            {guard6,
             <<"-record(apa,{a=a,b=foo:bar()}).
               apa() ->

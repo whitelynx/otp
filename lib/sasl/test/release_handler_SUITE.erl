@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2011. All Rights Reserved.
+%% Copyright Ericsson AB 2011-2012. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -59,11 +59,11 @@ win32_cases() ->
 cases() ->
     [otp_2740, otp_2760, otp_5761, otp_9402, otp_9417,
      otp_9395_check_old_code, otp_9395_check_and_purge,
-     otp_9395_update_many_mods, otp_9395_rm_many_mods, otp_9864,
+     otp_9395_update_many_mods, otp_9395_rm_many_mods,
      instructions, eval_appup, eval_appup_with_restart,
      supervisor_which_children_timeout,
      release_handler_which_releases, install_release_syntax_check,
-     upgrade_supervisor, upgrade_supervisor_fail].
+     upgrade_supervisor, upgrade_supervisor_fail, otp_9864].
 
 groups() ->
     [{release,[],

@@ -1,7 +1,7 @@
 /*
  * %CopyrightBegin%
  *
- * Copyright Ericsson AB 1997-2010. All Rights Reserved.
+ * Copyright Ericsson AB 1997-2012. All Rights Reserved.
  *
  * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
@@ -70,11 +70,18 @@ typedef struct erl_mesg {
 	ErlHeapFragment *heap_frag;
 	void *attached;
     } data;
+#ifdef USE_VM_PROBES
+    Eterm m[3];                 /* m[0] = message, m[1] = seq trace token, m[3] = dynamic trace user tag */
+#else
     Eterm m[2];			/* m[0] = message, m[1] = seq trace token */
+#endif
 } ErlMessage;
 
 #define ERL_MESSAGE_TERM(mp) ((mp)->m[0])
 #define ERL_MESSAGE_TOKEN(mp) ((mp)->m[1])
+#ifdef USE_VM_PROBES
+#define ERL_MESSAGE_DT_UTAG(mp) ((mp)->m[2])
+#endif
 
 /* Size of default message buffer (erl_message.c) */
 #define ERL_MESSAGE_BUF_SZ 500
@@ -83,7 +90,7 @@ typedef struct {
     ErlMessage* first;
     ErlMessage** last;  /* point to the last next pointer */
     ErlMessage** save;
-    int len;            /* queue length */
+    Sint len;            /* queue length */
 
     /*
      * The following two fields are used by the recv_mark/1 and
@@ -98,7 +105,7 @@ typedef struct {
 typedef struct {
     ErlMessage* first;
     ErlMessage** last;  /* point to the last next pointer */
-    int len;            /* queue length */
+    Sint len;            /* queue length */
 } ErlMessageInQueue;
 
 #endif
@@ -118,23 +125,23 @@ typedef struct {
 #ifdef ERTS_SMP
 
 /* Move in message queue to end of private message queue */
-#define ERTS_SMP_MSGQ_MV_INQ2PRIVQ(P)			\
-do {							\
-    if ((P)->msg_inq.first) {				\
-	*(P)->msg.last = (P)->msg_inq.first;		\
-	(P)->msg.last = (P)->msg_inq.last;		\
-	(P)->msg.len += (P)->msg_inq.len;		\
-	(P)->msg_inq.first = NULL;			\
-	(P)->msg_inq.last = &(P)->msg_inq.first;	\
-	(P)->msg_inq.len = 0;				\
-    }							\
+#define ERTS_SMP_MSGQ_MV_INQ2PRIVQ(P)					\
+do {									\
+    if ((P)->u.alive.msg_inq.first) {					\
+	*(P)->msg.last = (P)->u.alive.msg_inq.first;			\
+	(P)->msg.last = (P)->u.alive.msg_inq.last;			\
+	(P)->msg.len += (P)->u.alive.msg_inq.len;			\
+	(P)->u.alive.msg_inq.first = NULL;				\
+	(P)->u.alive.msg_inq.last = &(P)->u.alive.msg_inq.first;	\
+	(P)->u.alive.msg_inq.len = 0;					\
+    }									\
 } while (0)
 
 /* Add message last in message queue */
 #define LINK_MESSAGE(p, mp) do { \
-    *(p)->msg_inq.last = (mp); \
-    (p)->msg_inq.last = &(mp)->next; \
-    (p)->msg_inq.len++; \
+    *(p)->u.alive.msg_inq.last = (mp); \
+    (p)->u.alive.msg_inq.last = &(mp)->next; \
+    (p)->u.alive.msg_inq.len++; \
 } while(0)
 
 #else
@@ -221,9 +228,13 @@ ErlHeapFragment* erts_resize_message_buffer(ErlHeapFragment *, Uint,
 					    Eterm *, Uint);
 void free_message_buffer(ErlHeapFragment *);
 void erts_queue_dist_message(Process*, ErtsProcLocks*, ErtsDistExternal *, Eterm);
-void erts_queue_message(Process*, ErtsProcLocks*, ErlHeapFragment*, Eterm, Eterm);
+void erts_queue_message(Process*, ErtsProcLocks*, ErlHeapFragment*, Eterm, Eterm
+#ifdef USE_VM_PROBES
+		   , Eterm dt_utag
+#endif
+);
 void erts_deliver_exit_message(Eterm, Process*, ErtsProcLocks *, Eterm, Eterm);
-void erts_send_message(Process*, Process*, ErtsProcLocks*, Eterm, unsigned);
+Sint erts_send_message(Process*, Process*, ErtsProcLocks*, Eterm, unsigned);
 void erts_link_mbuf_to_proc(Process *proc, ErlHeapFragment *bp);
 
 void erts_move_msg_mbuf_to_heap(Eterm**, ErlOffHeap*, ErlMessage *);

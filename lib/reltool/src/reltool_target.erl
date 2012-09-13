@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2009-2011. All Rights Reserved.
+%% Copyright Ericsson AB 2009-2012. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -101,7 +101,7 @@ do_gen_config(#sys{root_dir          	= RootDir,
 	 || A <- Apps,
 	    A#app.name =/= ?MISSING_APP_NAME,
 	    A#app.name =/= erts,
-	    not A#app.is_escript],
+	    A#app.is_escript =/= true],
     EscriptItems = [{escript,
 		     A#app.active_dir,
 		     emit(incl_cond, A#app.incl_cond, undefined, InclDefs)}
@@ -155,6 +155,7 @@ do_gen_config(#app{name = Name,
 		   archive_opts = ArchiveOpts,
 		   use_selected_vsn  = UseSelected,
 		   vsn = Vsn,
+		   active_dir = ActiveDir,
 		   mods = Mods,
 		   is_included = IsIncl},
 	      InclDefs) ->
@@ -170,9 +171,10 @@ do_gen_config(#app{name = Name,
 	 emit(excl_archive_filters, ExclArchiveDirs, undefined, InclDefs),
 	 emit(archive_opts, ArchiveOpts, undefined, InclDefs),
 	 if
-	     IsIncl, InclDefs -> [{vsn, Vsn}];
-	     UseSelected      -> [{vsn, Vsn}];
-	     true             -> []
+	     IsIncl, InclDefs    -> [{vsn, Vsn}, {lib_dir, ActiveDir}];
+	     UseSelected =:= vsn -> [{vsn, Vsn}];
+	     UseSelected =:= dir -> [{lib_dir, ActiveDir}];
+	     true                -> []
 	 end,
 	 [do_gen_config(M, InclDefs) || M <- Mods]
 	],
@@ -208,10 +210,10 @@ do_gen_config(#rel_app{name = Name,
 		       incl_apps = InclApps},
 	      _InclDefs) ->
     case {Type, InclApps} of
-        {undefined, []} -> Name;
-        {undefined, _}  -> {Name, InclApps};
-        {_, []}         -> {Name, Type};
-        {_, _}          -> {Name, Type, InclApps}
+        {undefined, undefined} -> Name;
+        {undefined, _}         -> {Name, InclApps};
+        {_, undefined}         -> {Name, Type};
+        {_, _}                 -> {Name, Type, InclApps}
     end;
 do_gen_config({Tag, Val}, InclDefs) ->
     emit(Tag, Val, undefined, InclDefs);
@@ -247,10 +249,15 @@ gen_app(#app{name = Name,
                               env = Env,
                               mod = StartMod,
                               start_phases = StartPhases}}) ->
-    StartMod2 =
-        case StartMod =:= undefined of
-            true  -> [];
-            false -> [{mod, StartMod}]
+    StartPhases2 =
+        case StartPhases of
+            undefined -> [];
+            _         -> [{start_phases, StartPhases}]
+        end,
+    Tail =
+        case StartMod of
+            undefined -> StartPhases2;
+            _         -> [{mod, StartMod} | StartPhases2]
         end,
     {application, Name,
      [{description, Desc},
@@ -261,10 +268,9 @@ gen_app(#app{name = Name,
       {applications, ReqApps},
       {included_applications, InclApps},
       {env, Env},
-      {start_phases, StartPhases},
       {maxT, MaxT},
       {maxP, MaxP} |
-      StartMod2]}.
+      Tail]}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Generate the contents of a rel file
@@ -279,7 +285,7 @@ gen_rel(Rel, Sys) ->
             {error, Text}
     end.
 
-do_gen_rel(#rel{name = RelName, vsn = RelVsn},
+do_gen_rel(#rel{name = RelName, vsn = RelVsn, rel_apps = RelApps},
 	   #sys{apps = Apps},
 	   MergedApps) ->
     ErtsName = erts,
@@ -288,7 +294,7 @@ do_gen_rel(#rel{name = RelName, vsn = RelVsn},
 	    {release,
 	     {RelName, RelVsn},
 	     {ErtsName, Erts#app.vsn},
-	     [strip_rel_info(App) || App <- MergedApps]};
+	     [strip_rel_info(App, RelApps) || App <- MergedApps]};
 	false ->
 	    reltool_utils:throw_error("Mandatory application ~p is "
 				      "not included",
@@ -298,13 +304,17 @@ do_gen_rel(#rel{name = RelName, vsn = RelVsn},
 strip_rel_info(#app{name = Name,
 		    vsn = Vsn,
 		    app_type = Type,
-		    info = #app_info{incl_apps = InclApps}})
-  when Type =/= undefined ->
-    case {Type, InclApps} of
-        {permanent, []} -> {Name, Vsn};
-        {permanent, _}  -> {Name, Vsn, InclApps};
-        {_, []}         -> {Name, Vsn, Type};
-        {_, _}          -> {Name, Vsn, Type, InclApps}
+		    info = #app_info{incl_apps = AppInclApps}},
+	       RelApps) when Type =/= undefined ->
+    RelInclApps = case lists:keyfind(Name,#rel_app.name,RelApps) of
+		      #rel_app{incl_apps = RIA} when RIA =/= undefined -> RIA;
+		      _ -> undefined
+		  end,
+    case {Type, RelInclApps} of
+        {permanent, undefined} -> {Name, Vsn};
+	{permanent, _}         -> {Name, Vsn, AppInclApps};
+        {_, undefined}         -> {Name, Vsn, Type};
+        {_, _}                 -> {Name, Vsn, Type, AppInclApps}
     end.
 
 merge_apps(#rel{name = RelName,
@@ -323,7 +333,7 @@ merge_apps(#rel{name = RelName,
 		       A#app.name =/= ?MISSING_APP_NAME,
 		       not lists:keymember(A#app.name, #app.name, MergedApps2)],
     MergedApps3 = do_merge_apps(RelName, Embedded, Apps, EmbAppType, MergedApps2),
-    sort_apps(MergedApps3).
+    sort_apps(lists:reverse(MergedApps3)).
 
 do_merge_apps(RelName, [#rel_app{name = Name} = RA | RelApps], Apps, RelAppType, Acc) ->
     case is_already_merged(Name, RelApps, Acc) of
@@ -341,25 +351,18 @@ do_merge_apps(RelName, [Name | RelApps], Apps, RelAppType, Acc) ->
 	true ->
 	  do_merge_apps(RelName, RelApps, Apps, RelAppType, Acc);
 	false ->
-	  RelApp = init_rel_app(Name, Apps),
+	  RelApp = #rel_app{name = Name},
 	  do_merge_apps(RelName, [RelApp | RelApps], Apps, RelAppType, Acc)
   end;
 do_merge_apps(_RelName, [], _Apps, _RelAppType, Acc) ->
-    lists:reverse(Acc).
-
-init_rel_app(Name, Apps) ->
-    {value, App} = lists:keysearch(Name, #app.name, Apps),
-    Info = App#app.info,
-    #rel_app{name = Name,
-	     app_type = undefined,
-	     incl_apps = Info#app_info.incl_apps}.
+    Acc.
 
 merge_app(RelName,
-	      #rel_app{name = Name,
-		       app_type = Type,
-		       incl_apps = InclApps},
-	      RelAppType,
-	      App) ->
+	  #rel_app{name = Name,
+		   app_type = Type,
+		   incl_apps = InclApps0},
+	  RelAppType,
+	  App) ->
     Type2 =
         case {Type, App#app.app_type} of
             {undefined, undefined} -> RelAppType;
@@ -367,6 +370,11 @@ merge_app(RelName,
             {_, _} -> Type
         end,
     Info = App#app.info,
+    InclApps =
+	case InclApps0 of
+	    undefined -> Info#app_info.incl_apps;
+	    _ -> InclApps0
+	end,
     case InclApps -- Info#app_info.incl_apps of
         [] ->
 	    App#app{app_type = Type2, info = Info#app_info{incl_apps = InclApps}};
@@ -421,7 +429,10 @@ do_gen_script(#rel{name = RelName, vsn = RelVsn},
     Mandatory = mandatory_modules(),
     Early = Mandatory ++ Preloaded,
     {value, KernelApp} = lists:keysearch(kernel, #app.name, MergedApps),
-    InclApps = [I || #app{info = #app_info{incl_apps = I}} <- MergedApps],
+    InclApps = lists:flatmap(fun(#app{info = #app_info{incl_apps = I}}) ->
+				     I
+			     end,
+			     MergedApps),
 
     %% Create the script
     DeepList =
@@ -471,7 +482,7 @@ load_app_mods(#app{mods = Mods} = App, Mand, PathFlag, Variables) ->
     Path = cr_path(App, PathFlag, Variables),
     PartNames =
         lists:sort([{packages:split(M),M} ||
-                       #mod{name = M} <- Mods,
+                       #mod{name = M, is_included=true} <- Mods,
                        not lists:member(M, Mand)]),
     SplitMods =
         lists:foldl(
@@ -513,7 +524,12 @@ sort_apps([#app{name = Name, info = Info} = App | Apps],
 	  Circular,
 	  Visited) ->
     {Uses, Apps1, NotFnd1} =
-	find_all(Name, Info#app_info.applications, Apps, Visited, [], []),
+	find_all(Name,
+		 lists:reverse(Info#app_info.applications),
+		 Apps,
+		 Visited,
+		 [],
+		 []),
     {Incs, Apps2, NotFnd2} =
 	find_all(Name,
 		 lists:reverse(Info#app_info.incl_apps),
@@ -671,6 +687,8 @@ strip_name_ebin(Dir, Name, Vsn) ->
     case lists:reverse(Dir) of
         ["ebin", Name     | D] -> {ok, lists:reverse(D)};
         ["ebin", FullName | D] -> {ok, lists:reverse(D)};
+        [Name     | D] -> {ok, lists:reverse(D)};
+        [FullName | D] -> {ok, lists:reverse(D)};
         _                      -> false
     end.
 
@@ -717,8 +735,20 @@ do_spec_rel_files(#rel{name = RelName} = Rel,  Sys) ->
     BootFile = RelName ++ ".boot",
     MergedApps = merge_apps(Rel, Sys),
     GenRel = do_gen_rel(Rel, Sys, MergedApps),
+    Variables =
+	case Sys#sys.excl_lib of
+	    otp_root ->
+		%% All applications that are fetched from somewhere
+		%% other than $OTP_ROOT/lib will get $RELTOOL_EXT_LIB
+		%% as path prefix in the .script file.
+		[{"RELTOOL_EXT_LIB",LibDir} ||  LibDir <- Sys#sys.lib_dirs] ++
+		    [{"RELTOOL_EXT_LIB",filename:dirname(AppLibDir)} ||
+			#app{active_dir=AppLibDir,use_selected_vsn=dir}
+			    <- MergedApps];
+	    _ ->
+		[]
+	end,
     PathFlag = true,
-    Variables = [],
     {ok, Script} = do_gen_script(Rel, Sys, MergedApps, PathFlag, Variables),
     {ok, BootBin} = gen_boot(Script),
     Date = date(),
@@ -755,29 +785,34 @@ gen_spec(Sys) ->
     end.
 
 do_gen_spec(#sys{root_dir = RootDir,
+		 excl_lib = ExclLib,
                  incl_sys_filters = InclRegexps,
                  excl_sys_filters = ExclRegexps,
                  relocatable = Relocatable,
                  apps = Apps} = Sys) ->
-    {create_dir, _, SysFiles} = spec_dir(RootDir),
-    {ExclRegexps2, SysFiles2} =
-	strip_sys_files(Relocatable, SysFiles, Apps, ExclRegexps),
     RelFiles = spec_rel_files(Sys),
-    {InclRegexps2, BinFiles} =
-	spec_bin_files(Sys, SysFiles, SysFiles2, RelFiles, InclRegexps),
+    {SysFiles, InclRegexps2, ExclRegexps2, Mandatory} =
+	case ExclLib of
+	    otp_root ->
+		{[],InclRegexps,ExclRegexps,["lib"]};
+	    _ ->
+		{create_dir, _, SF} = spec_dir(RootDir),
+		{ER2, SF2} = strip_sys_files(Relocatable, SF, Apps, ExclRegexps),
+		{IR2, BinFiles} =
+		    spec_bin_files(Sys, SF, SF2, RelFiles, InclRegexps),
+		SF3 = [{create_dir, "bin", BinFiles}] ++ SF2,
+		{SF3,IR2,ER2,["bin","erts","lib"]}
+	end,
     LibFiles = spec_lib_files(Sys),
     {BootVsn, StartFile} = spec_start_file(Sys),
-    SysFiles3 =
-        [
-         {create_dir, "releases",
+    SysFiles2 =
+        [{create_dir, "releases",
 	  [StartFile,
-	   {create_dir,BootVsn, RelFiles}]},
-	 {create_dir, "bin", BinFiles}
-        ] ++ SysFiles2,
-    SysFiles4 = filter_spec(SysFiles3, InclRegexps2, ExclRegexps2),
-    SysFiles5 = SysFiles4 ++ [{create_dir, "lib", LibFiles}],
-    check_sys(["bin", "erts", "lib"], SysFiles5),
-    SysFiles5.
+	   {create_dir,BootVsn, RelFiles}]}] ++ SysFiles,
+    SysFiles3 = filter_spec(SysFiles2, InclRegexps2, ExclRegexps2),
+    SysFiles4 = SysFiles3 ++ [{create_dir, "lib", LibFiles}],
+    check_sys(Mandatory, SysFiles4),
+    SysFiles4.
 
 strip_sys_files(Relocatable, SysFiles, Apps, ExclRegexps) ->
     ExclRegexps2 =
@@ -895,7 +930,7 @@ spec_escripts(#sys{apps = Apps}, ErtsBin, BinFiles) ->
                      if
                          Name =:= ?MISSING_APP_NAME ->
                              false;
-                         not IsEscript ->
+                         IsEscript =/= true ->
                              false;
                          IsIncl; IsPre ->
                              {true, do_spec_escript(File, ErtsBin, BinFiles)};
@@ -951,22 +986,35 @@ safe_lookup_spec(Prefix, Specs) ->
 %% Specify applications
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-spec_lib_files(#sys{apps = Apps} = Sys) ->
+spec_lib_files(#sys{root_dir = RootDir,
+		    apps = Apps,
+		    excl_lib = ExclLib} = Sys) ->
     Filter = fun(#app{is_escript = IsEscript, is_included = IsIncl,
-                      is_pre_included = IsPre, name = Name}) ->
+                      is_pre_included = IsPre, name = Name,
+		      active_dir = ActiveDir}) ->
                      if
                          Name =:= ?MISSING_APP_NAME ->
                              false;
-                         IsEscript ->
+                         IsEscript =/= false ->
                              false;
                          IsIncl; IsPre ->
-                             true;
+			     case ExclLib of
+				 otp_root ->
+				     not lists:prefix(RootDir,ActiveDir);
+				 _ ->
+				     true
+			     end;
                          true ->
                              false
                      end
              end,
     SelectedApps = lists:filter(Filter, Apps),
-    check_apps([kernel, stdlib], SelectedApps),
+    case ExclLib of
+	otp_root ->
+	    ok;
+	_ ->
+	    check_apps([kernel, stdlib], SelectedApps)
+    end,
     lists:flatten([spec_app(App, Sys) || App <- SelectedApps]).
 
 check_apps([Mandatory | Names], Apps) ->

@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 1997-2011. All Rights Reserved.
+%% Copyright Ericsson AB 1997-2012. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -535,7 +535,7 @@ options() ->
      buffer, header, active, packet, deliver, mode,
      multicast_if, multicast_ttl, multicast_loop,
      exit_on_close, high_watermark, low_watermark,
-     bit8, send_timeout, send_timeout_close
+     send_timeout, send_timeout_close
     ].
 
 %% Return a list of statistics options
@@ -552,7 +552,7 @@ stats() ->
 connect_options() ->
     [tos, priority, reuseaddr, keepalive, linger, sndbuf, recbuf, nodelay,
      header, active, packet, packet_size, buffer, mode, deliver,
-     exit_on_close, high_watermark, low_watermark, bit8, send_timeout,
+     exit_on_close, high_watermark, low_watermark, send_timeout,
      send_timeout_close, delay_send,raw].
     
 connect_options(Opts, Family) ->
@@ -608,7 +608,7 @@ con_add(Name, Val, R, Opts, AllOpts) ->
 listen_options() ->
     [tos, priority, reuseaddr, keepalive, linger, sndbuf, recbuf, nodelay,
      header, active, packet, buffer, mode, deliver, backlog,
-     exit_on_close, high_watermark, low_watermark, bit8, send_timeout,
+     exit_on_close, high_watermark, low_watermark, send_timeout,
      send_timeout_close, delay_send, packet_size,raw].
 
 listen_options(Opts, Family) ->
@@ -763,8 +763,12 @@ sctp_opt([Opt|Opts], Mod, R, As) ->
 	{Name,Val}	-> sctp_opt (Opts, Mod, R, As, Name, Val);
 	_ -> {error,badarg}
     end;
-sctp_opt([], _Mod, R, _SockOpts) ->
-    {ok, R}.
+sctp_opt([], _Mod, #sctp_opts{ifaddr=IfAddr}=R, _SockOpts) ->
+    if is_list(IfAddr) ->
+	    {ok, R#sctp_opts{ifaddr=lists:reverse(IfAddr)}};
+       true ->
+	    {ok, R}
+    end.
 
 sctp_opt(Opts, Mod, R, As, Name, Val) ->
     case add_opt(Name, Val, R#sctp_opts.opts, As) of
@@ -1015,11 +1019,7 @@ open(Fd, Addr, Port, Opts, Protocol, Family, Type, Module) when Fd < 0 ->
 	    case prim_inet:setopts(S, Opts) of
 		ok ->
 		    case if is_list(Addr) ->
-				 prim_inet:bind(S, add,
-						[case A of
-						     {_,_} -> A;
-						     _     -> {A,Port}
-						 end || A <- Addr]);
+				 bindx(S, Addr, Port);
 			    true ->
 				 prim_inet:bind(S, Addr, Port)
 			 end of
@@ -1039,6 +1039,34 @@ open(Fd, Addr, Port, Opts, Protocol, Family, Type, Module) when Fd < 0 ->
     end;
 open(Fd, _Addr, _Port, Opts, Protocol, Family, Type, Module) ->
     fdopen(Fd, Opts, Protocol, Family, Type, Module).
+
+bindx(S, [Addr], Port0) ->
+    {IP, Port} = set_bindx_port(Addr, Port0),
+    prim_inet:bind(S, IP, Port);
+bindx(S, Addrs, Port0) ->
+    [{IP, Port} | Rest] = [set_bindx_port(Addr, Port0) || Addr <- Addrs],
+    case prim_inet:bind(S, IP, Port) of
+	{ok, AssignedPort} when Port =:= 0 ->
+	    %% On newer Linux kernels, Solaris and FreeBSD, calling
+	    %% bindx with port 0 is ok, but on SuSE 10, it results in einval
+	    Rest2 = [change_bindx_0_port(Addr, AssignedPort) || Addr <- Rest],
+	    prim_inet:bind(S, add, Rest2);
+	{ok, _} ->
+	    prim_inet:bind(S, add, Rest);
+	Error ->
+	    Error
+    end.
+
+set_bindx_port({_IP, _Port}=Addr, _OtherPort) ->
+    Addr;
+set_bindx_port(IP, Port) ->
+    {IP, Port}.
+
+change_bindx_0_port({IP, 0}, AssignedPort) ->
+    {IP, AssignedPort};
+change_bindx_0_port({_IP, _Port}=Addr, _AssignedPort) ->
+    Addr.
+
 
 -spec fdopen(Fd :: non_neg_integer(),
 	     Opts :: [socket_setopt()],
@@ -1218,11 +1246,13 @@ port_list(Name) ->
 %%  utils
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--spec format_error(Posix) -> string() when
-      Posix :: posix().
+-spec format_error(Reason) -> string() when
+      Reason :: posix() | system_limit.
 
 format_error(exbadport) -> "invalid port state";
 format_error(exbadseq) ->  "bad command sequence";
+format_error(system_limit) ->
+    "a system limit was hit, probably not enough ports";
 format_error(Tag) ->
     erl_posix_msg:message(Tag).
 
@@ -1244,6 +1274,8 @@ udp_close(S) when is_port(S) ->
 %% Set controlling process for TCP socket.
 tcp_controlling_process(S, NewOwner) when is_port(S), is_pid(NewOwner) ->
     case erlang:port_info(S, connected) of
+	{connected, NewOwner} ->
+	    ok;
 	{connected, Pid} when Pid =/= self() ->
 	    {error, not_owner};
 	undefined ->
@@ -1251,7 +1283,10 @@ tcp_controlling_process(S, NewOwner) when is_port(S), is_pid(NewOwner) ->
 	_ ->
 	    case prim_inet:getopt(S, active) of
 		{ok, A0} ->
-		    prim_inet:setopt(S, active, false),
+		    case A0 of
+			false -> ok;
+			_ -> prim_inet:setopt(S, active, false)
+		    end,
 		    case tcp_sync_input(S, NewOwner, false) of
 			true ->  %% socket already closed, 
 			    ok;
@@ -1259,7 +1294,10 @@ tcp_controlling_process(S, NewOwner) when is_port(S), is_pid(NewOwner) ->
 			    try erlang:port_connect(S, NewOwner) of
 				true -> 
 				    unlink(S), %% unlink from port
-				    prim_inet:setopt(S, active, A0),
+				    case A0 of
+					false -> ok;
+					_ -> prim_inet:setopt(S, active, A0)
+				    end,
 				    ok
 			    catch
 				error:Reason -> 
@@ -1295,6 +1333,8 @@ tcp_sync_input(S, Owner, Flag) ->
 %% Set controlling process for UDP or SCTP socket.
 udp_controlling_process(S, NewOwner) when is_port(S), is_pid(NewOwner) ->
     case erlang:port_info(S, connected) of
+	{connected, NewOwner} ->
+	    ok;
 	{connected, Pid} when Pid =/= self() ->
 	    {error, not_owner};
 	_ ->

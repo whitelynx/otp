@@ -1,7 +1,7 @@
 /*
  * %CopyrightBegin%
  *
- * Copyright Ericsson AB 1999-2011. All Rights Reserved.
+ * Copyright Ericsson AB 1999-2012. All Rights Reserved.
  *
  * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
@@ -361,7 +361,7 @@ staging_epilogue(Process* c_p, int commit, Eterm res, int is_blocking,
 	 * without any memory barriers at all. 
 	 */
     
-	later = erts_thr_progress_later(); 
+	later = erts_thr_progress_later(c_p->scheduler_data);
 	erts_thr_progress_wakeup(c_p->scheduler_data, later);
 	erts_notify_code_ix_activation(c_p, later);
 	erts_suspend(c_p, ERTS_PROC_LOCK_MAIN, NULL);
@@ -672,11 +672,11 @@ set_default_trace_pattern(Eterm module)
     if (trace_pattern_is_on) {
 	Eterm mfa[1];
 	mfa[0] = module;
-	(void) erts_set_trace_pattern(mfa, 1,
+	(void) erts_set_trace_pattern(0, mfa, 1,
 				      match_spec,
 				      meta_match_spec,
 				      1, trace_pattern_flags,
-				      meta_tracer_pid);
+				      meta_tracer_pid, 1);
     }
 }
 
@@ -688,10 +688,8 @@ check_process_code(Process* rp, Module* modp)
     Uint mod_size;
     BeamInstr* end;
     Eterm* sp;
-#ifndef HYBRID /* FIND ME! */
     struct erl_off_heap_header* oh;
     int done_gc = 0;
-#endif
 
 #define INSIDE(a) (start <= (a) && (a) < end)
 
@@ -750,7 +748,6 @@ check_process_code(Process* rp, Module* modp)
      * See if there are funs that refer to the old version of the module.
      */
 
-#ifndef HYBRID /* FIND ME! */
  rescan:
     for (oh = MSO(rp).first; oh; oh = oh->next) {
 	if (thing_subtag(oh->thing_word) == FUN_SUBTAG) {
@@ -776,7 +773,6 @@ check_process_code(Process* rp, Module* modp)
 	    }
 	}
     }
-#endif
 
     /*
      * See if there are constants inside the module referenced by the process.
@@ -1010,12 +1006,11 @@ delete_code(Module* modp)
 		if (ep->code[3] == (BeamInstr) em_apply_bif) {
 		    continue;
 		}
-		else if (ep->code[3] == (BeamInstr) em_call_traced_function) {
+		else if (ep->code[3] ==
+			 (BeamInstr) BeamOp(op_i_generic_breakpoint)) {
 		    ERTS_SMP_LC_ASSERT(erts_smp_thr_progress_is_blocking());
 		    ASSERT(modp->curr.num_traced_exports > 0);
-		    --modp->curr.num_traced_exports;
-		    MatchSetUnref(ep->match_prog_set);
-		    ep->match_prog_set = NULL;
+		    erts_clear_export_break(modp, ep->code+3);
 		}
 		else ASSERT(ep->code[3] == (BeamInstr) em_call_error_handler
 			    || !erts_initialized);
@@ -1023,7 +1018,6 @@ delete_code(Module* modp)
 	    ep->addressv[code_ix] = ep->code+3;
 	    ep->code[3] = (BeamInstr) em_call_error_handler;
 	    ep->code[4] = 0;
-	    ASSERT(ep->match_prog_set == NULL);
 	}
     }
 

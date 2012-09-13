@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %% 
-%% Copyright Ericsson AB 1996-2011. All Rights Reserved.
+%% Copyright Ericsson AB 1996-2012. All Rights Reserved.
 %% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -112,7 +112,7 @@ get_helper_timeout() ->
 set_helper_timeout(Seconds) ->
     case param_type(memsup_helper_timeout, Seconds) of
 	true ->
-	    os_mon:call(memsup, {set_helper_timeout, Seconds});
+	    os_mon:call(memsup, {set_helper_timeout, Seconds}, infinity);
 	false ->
 	    erlang:error(badarg)
     end.
@@ -185,7 +185,6 @@ init([]) ->
 		   {unix, irix} -> true;
 		   {unix, sunos} -> true;
 		   {win32, _OSname} -> false;
-		   vxworks -> true;
 		   _ ->
 		       exit({unsupported_os, OS})
 	       end,
@@ -617,8 +616,7 @@ code_change(Vsn, PrevState, "1.8") ->
 			   {unix, openbsd} -> true;
 			   {unix, netbsd} -> true;
 			   {unix, sunos} -> true;
-			   {win32, _OSname} -> false;
-			   vxworks -> true
+			   {win32, _OSname} -> false
 		       end,
 	    Pid = if
 		      PortMode -> spawn_link(fun() -> port_init() end);

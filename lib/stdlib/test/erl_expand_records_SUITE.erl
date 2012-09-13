@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %% 
-%% Copyright Ericsson AB 2005-2011. All Rights Reserved.
+%% Copyright Ericsson AB 2005-2012. All Rights Reserved.
 %% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -157,7 +157,7 @@ expr(Config) when is_list(Config) ->
              One = 1 = fun f/1(1),
              2 = fun(X) -> X end(One + One),
              3 = fun exprec_test:f/1(3),
-             4 = {exprec_test,f}(4),
+             4 = exprec_test:f(4),
              5 = ''.f(5),
              L = receive 
                      {a,message,L0} ->

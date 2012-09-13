@@ -4,7 +4,7 @@
 <erlref>
   <header>
     <copyright>
-      <year>1999</year><year>2011</year>
+      <year>1999</year><year>2012</year>
       <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
@@ -36,12 +36,16 @@
 
     <list type="bulleted">
       <item>ssl requires the crypto and public_key applications.</item>
-      <item>Supported SSL/TLS-versions are SSL-3.0 and TLS-1.0 </item>
+      <item>Supported SSL/TLS-versions are SSL-3.0 and TLS-1.0, experimental
+      support for TLS-1.1 and TLS-1.2 is also available (no support for elliptic curve cipher suites yet).</item>
       <item>For security reasons sslv2 is not supported.</item>
       <item>Ephemeral Diffie-Hellman cipher suites are supported
       but not Diffie Hellman Certificates cipher suites.</item>
       <item>Export cipher suites are not supported as the
       U.S. lifted its export restrictions in early 2000.</item>
+      <item>IDEA cipher suites are not supported as they have
+      become deprecated by the latest TLS spec so there is not any
+      real motivation to implement them.</item>
       <item>CRL and policy certificate
             extensions are not supported yet. </item>
     </list>
@@ -62,8 +66,8 @@
     </c></p>
 
     <p>For valid options
-      see <seealso marker="kernel:inet">inet(3) </seealso> and
-      <seealso marker="kernel:gen_tcp">gen_tcp(3) </seealso>.
+      see <seealso marker="kernel:inet">inet(3)</seealso> and
+      <seealso marker="kernel:gen_tcp">gen_tcp(3)</seealso>.
     </p>
     
     <p> <c>ssloption() = {verify, verify_type()} |
@@ -75,7 +79,7 @@
       {keyfile, path()} | {password, string()} |
       {cacerts, [der_encoded()]} | {cacertfile, path()} |
       |{dh, der_encoded()} | {dhfile, path()} | {ciphers, ciphers()} |
-      {ssl_imp, ssl_imp()} | {reuse_sessions, boolean()} | {reuse_session, fun()} 
+      {ssl_imp, ssl_imp()}| {reuse_sessions, boolean()} | {reuse_session, fun()}
     </c></p>
 
     <p><c>transportoption() = {CallbackModule, DataTag, ClosedTag}
@@ -106,7 +110,7 @@
 
     <p><c>sslsocket() - opaque to the user. </c></p>
     
-    <p><c>protocol() = sslv3 | tlsv1 </c></p>
+    <p><c>protocol() = sslv3 | tlsv1 | 'tlsv1.1' | 'tlsv1.2' </c></p>
     
     <p><c>ciphers() = [ciphersuite()] | string() (according to old API)</c></p>
     
@@ -120,6 +124,9 @@
       | aes_128_cbc | aes_256_cbc </c></p>
 
    <p> <c>hash() = md5 | sha
+    </c></p>
+
+    <p><c>prf_random() =  client_random | server_random
     </c></p>
 
   </section>
@@ -190,13 +197,13 @@
       </item>
 
       <tag>{depth, integer()}</tag>
-      <item>Specifies the maximum
-      verification depth, i.e. how far in a chain of certificates the
-      verification process can proceed before the verification is
-      considered to fail. Peer certificate = 0, CA certificate = 1,
-      higher level CA certificate = 2, etc.  The value 2 thus means
-      that a chain can at most contain peer cert, CA cert, next CA
-      cert, and an additional CA cert. The default value is 1.
+      <item>
+	The depth is the maximum number of non-self-issued
+	intermediate certificates that may follow the peer certificate
+	in a valid certification path.  So if depth is 0 the PEER must
+	be signed by the trusted ROOT-CA directly, if 1 the path can
+	be PEER, CA, ROOT-CA, if it is 2 PEER, CA, CA, ROOT-CA and so
+	on.  The default value is 1.
       </item>
 
       <tag>{verify_fun, {Verifyfun :: fun(), InitialUserState :: term()}}</tag>
@@ -560,6 +567,26 @@ fun(OtpCert :: #'OTPCertificate'{}, Event :: {bad_cert, Reason :: atom()} |
       </desc>
     </func>
     
+    <func>
+      <name>prf(Socket, Secret, Label, Seed, WantedLength) -> {ok, binary()} | {error, reason()}</name>
+      <fsummary>Use a sessions pseudo random function to generate key material.</fsummary>
+      <type>
+	<v>Socket = sslsocket()</v>
+	<v>Secret = binary() | master_secret</v>
+	<v>Label = binary()</v>
+	<v>Seed = [binary() | prf_random()]</v>
+	<v>WantedLength = non_neg_integer()</v>
+      </type>
+      <desc>
+        <p>Use the pseudo random function (PRF) of a TLS session to generate
+	  additional key material. It either takes user generated values for
+	  <c>Secret</c> and <c>Seed</c> or atoms directing it use a specific
+	  value from the session security parameters.</p>
+        <p>This function can only be used with TLS connections, <c>{error, undefined}</c>
+	  is returned for SSLv3 connections.</p>
+      </desc>
+    </func>
+
     <func>
       <name>renegotiate(Socket) -> ok | {error, Reason}</name>
       <fsummary> Initiates a new handshake.</fsummary>

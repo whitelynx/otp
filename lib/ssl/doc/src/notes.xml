@@ -4,7 +4,7 @@
 <chapter>
   <header>
     <copyright>
-      <year>1999</year><year>2011</year>
+      <year>1999</year><year>2012</year>
       <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
@@ -30,7 +30,116 @@
   </header>
   <p>This document describes the changes made to the SSL application.</p>
   
-  <section><title>SSL 5.0</title>
+  <section><title>SSL 5.1</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+	    Sometimes the client process could receive an extra
+	    {error, closed} message after ssl:recv had returned
+	    {error, closed}.</p>
+          <p>
+	    Own Id: OTP-10118</p>
+        </item>
+        <item>
+          <p>
+	    ssl v3 alert number 41 (no_certificate_RESERVED) is now
+	    recognized</p>
+          <p>
+	    Own Id: OTP-10196</p>
+        </item>
+      </list>
+    </section>
+
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    Experimental support for TLS 1.1 is now available, will
+	    be officially supported from OTP-R16. Thanks to Andreas
+	    Schultz for implementing the first version.</p>
+          <p>
+	    Own Id: OTP-8871</p>
+        </item>
+        <item>
+          <p>
+	    Experimental support for TLS 1.2 is now available, will
+	    be officially supported from OTP-R16. Thanks to Andreas
+	    Schultz for implementing the first version.</p>
+          <p>
+	    Own Id: OTP-8872</p>
+        </item>
+        <item>
+          <p>
+	    Removed some bottlenecks increasing the applications
+	    parallelism especially for the client side.</p>
+          <p>
+	    Own Id: OTP-10113</p>
+        </item>
+        <item>
+          <p>
+	    Workaround for handling certificates that wrongly encode
+	    X509countryname in utf-8 when the actual value is a valid
+	    ASCCI value of length 2. Such certificates are accepted
+	    by many browsers such as Chrome and Fierfox so for
+	    interoperability reasons we will too.</p>
+          <p>
+	    Own Id: OTP-10222</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+<section><title>SSL 5.0.1</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+	    Robustness and improvement to distribution over SSL</p>
+          <p>
+	    Fix a bug where ssl_tls_dist_proxy would crash at caller
+	    timeout. Fix a bug where a timeout from the SSL layer
+	    would block the distribution indefinately. Run the proxy
+	    exclusively on the loopback interface. (Thanks to Paul
+	    Guyot)</p>
+          <p>
+	    Own Id: OTP-9915</p>
+        </item>
+        <item>
+          <p>
+	    Fix setup loop of SSL TLS dist proxy</p>
+          <p>
+	    Fix potential leak of processes waiting indefinately for
+	    data from closed sockets during socket setup phase.
+	    (Thanks to Paul Guyot)</p>
+          <p>
+	    Own Id: OTP-9916</p>
+        </item>
+        <item>
+          <p>
+	    Correct spelling of registered (Thanks to Richard
+	    Carlsson)</p>
+          <p>
+	    Own Id: OTP-9925</p>
+        </item>
+        <item>
+          <p>
+	    Added TLS PRF function to the SSL API for generation of
+	    additional key material from a TLS session. (Thanks to
+	    Andreas Schultz)</p>
+          <p>
+	    Own Id: OTP-10024</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+<section><title>SSL 5.0</title>
 
     <section><title>Fixed Bugs and Malfunctions</title>
       <list>

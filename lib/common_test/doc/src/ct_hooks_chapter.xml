@@ -4,7 +4,7 @@
 <chapter>
   <header>
     <copyright>
-      <year>2011</year><year>2011</year>
+      <year>2011</year><year>2012</year>
       <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
@@ -189,6 +189,22 @@
 	it.</p>
     </section>
     
+    <section>
+      <title>External configuration data and Logging</title>
+      <p>It's possible in the CTH to read configuration data values
+	by calling <c><seealso marker="ct#get_config-1">ct:get_config/1/2/3</seealso></c> (as explained in the
+	<seealso marker="config_file_chapter#require_config_data">
+	  External configuration data</seealso>
+	chapter). The config variables in question must, as always, first have been
+	<c>required</c> by means of a suite-, group-, or test case info function,
+	or the <c><seealso marker="ct#require-1">ct:require/1/2</seealso></c> function. Note that the latter can also be used
+	in CT hook functions.</p>
+      <p>The CT hook functions may call any of the logging functions available
+	in the <c>ct</c> interface to print information to the log files, or to
+	add comments in the suite overview page.
+      </p>
+    </section>    
+
   </section>
 
   <marker id="manipulating"/>
@@ -201,11 +217,13 @@
     functions for a CTH follow a common interface, this interface is 
     described below.</p>
 
-    <p>It is only possible to hook into test function which exists in the test 
-      suite. So in order for a CTH to hook in before 
-      <seealso marker="common_test#Module:init_per_suite-1">init_per_suite</seealso>, 
-      the <seealso marker="common_test#Module:init_per_suite-1">init_per_suite</seealso> 
-      function must exist in the test suite.</p>
+    <p>Common Test will always call all available hook functions, even pre- and post
+      hooks for configuration functions that are not implemented in the suite.
+      For example, <c>pre_init_per_suite(x_SUITE, ...)</c> and
+      <c>post_init_per_suite(x_SUITE, ...)</c> will be called for test suite
+      <c>x_SUITE</c>, even if it doesn't export <c>init_per_suite/1</c>. This feature
+      makes it possible to use hooks as configuration fallbacks, or even
+      completely replace all configuration functions with hook functions.</p>
 
     <marker id="pre"/>
     <section>
@@ -234,6 +252,13 @@
     {ok, Handle} -&gt;
       {[{db_handle, Handle} | Config], CTHState#state{ handle = Handle }}
   end.</code>
+  <note>If using multiple CTHs, the first part of the return tuple will be
+  used as input for the next CTH. So in the case above the next CTH might
+  get <c>{fail,Reason}</c> as the second parameter. If you have many CTHs
+  which interact, it might be a good idea to not let each CTH return
+  <c>fail</c> or <c>skip</c>. Instead return that an action should be taken
+  through the <c>Config</c> list and implement a CTH which at the end takes
+  the correct action. </note>
 	
     </section>
     
@@ -428,6 +453,16 @@ terminate(State) ->
 	inbetween testcases. You can configure the level of
 	<seealso marker="sasl:sasl_app">SASL</seealso> events report
 	using the normal SASL mechanisms. </cell>
+      </row>
+      <row>
+	<cell>cth_surefire</cell>
+	<cell>no</cell>
+	<cell>Captures all test results and outputs them as surefire XML into
+	a file. The file which is created is by default called junit_report.xml.
+	The name can be by setting the path option for this hook. e.g.
+	<code>-ct_hooks cth_surefire [{path,"/tmp/report.xml"}]</code>
+	Surefire XML can forinstance be used by Jenkins to display test
+	results.</cell>
       </row>
     </table>
 

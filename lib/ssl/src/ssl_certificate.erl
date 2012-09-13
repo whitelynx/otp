@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2007-2011. All Rights Reserved.
+%% Copyright Ericsson AB 2007-2012. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -103,7 +103,7 @@ certificate_chain(OwnCert, CertDbHandle, CertsDbRef) ->
     ErlCert = public_key:pkix_decode_cert(OwnCert, otp),
     certificate_chain(ErlCert, OwnCert, CertDbHandle, CertsDbRef, [OwnCert]).
 %%--------------------------------------------------------------------
--spec file_to_certificats(string(), term()) -> [der_cert()].
+-spec file_to_certificats(binary(), term()) -> [der_cert()].
 %%
 %% Description: Return list of DER encoded certificates.
 %%--------------------------------------------------------------------
@@ -111,7 +111,7 @@ file_to_certificats(File, DbHandle) ->
     {ok, List} = ssl_manager:cache_pem_file(File, DbHandle),
     [Bin || {'Certificate', Bin, not_encrypted} <- List].
 %%--------------------------------------------------------------------
--spec validate_extension(term(), #'Extension'{} | {bad_cert, atom()} | valid,
+-spec validate_extension(term(), {extension, #'Extension'{}} | {bad_cert, atom()} | valid,
 			 term()) -> {valid, term()} |
 				    {fail, tuple()} |
 				    {unknown, term()}.
@@ -172,7 +172,12 @@ extensions_list(Extensions) ->
 %% Description: 
 %%--------------------------------------------------------------------
 signature_type(RSA) when RSA == ?sha1WithRSAEncryption;
-			 RSA == ?md5WithRSAEncryption ->
+			 RSA == ?md5WithRSAEncryption;
+			 RSA == ?sha224WithRSAEncryption;
+			 RSA == ?sha256WithRSAEncryption;
+			 RSA == ?sha384WithRSAEncryption;
+			 RSA == ?sha512WithRSAEncryption
+			 ->
     rsa;
 signature_type(?'id-dsa-with-sha1') ->
     dsa.

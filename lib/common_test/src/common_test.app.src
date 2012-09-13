@@ -1,7 +1,7 @@
 % This is an -*- erlang -*- file.
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2009-2011. All Rights Reserved.
+%% Copyright Ericsson AB 2009-2012. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -25,12 +25,16 @@
 	     ct_framework,
 	     ct_ftp,
 	     ct_gen_conn,
+             ct_hooks,
+             ct_hooks_lock,
 	     ct_logs,
 	     ct_make,
 	     ct_master,
 	     ct_master_event,
 	     ct_master_logs,
 	     ct_master_status,
+	     ct_netconfc,
+	     ct_conn_log_h,
 	     ct_repeat,
 	     ct_rpc,
 	     ct_run,
@@ -45,7 +49,10 @@
 	     ct_config,
 	     ct_config_plain,
 	     ct_config_xml,
-	     ct_slave
+	     ct_slave,
+             cth_log_redirect,
+	     cth_conn_log,
+             cth_surefire
 	    ]},
   {registered, [ct_logs,
 		ct_util_server,

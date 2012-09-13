@@ -87,7 +87,7 @@
 -export([garbage_collect/0, garbage_collect/1]).
 -export([garbage_collect_message_area/0, get/0, get/1, get_keys/1]).
 -export([get_module_info/1, get_stacktrace/0, group_leader/0]).
--export([group_leader/2, halt/0, halt/1, hash/2, hibernate/3]).
+-export([group_leader/2, halt/0, halt/1, halt/2, hash/2, hibernate/3]).
 -export([integer_to_list/1, iolist_size/1, iolist_to_binary/1]).
 -export([is_alive/0, is_builtin/3, is_process_alive/1, length/1, link/1]).
 -export([list_to_atom/1, list_to_binary/1, list_to_bitstr/1]).
@@ -128,6 +128,8 @@
          term_to_binary/1, term_to_binary/2, tl/1, trace_pattern/2,
          trace_pattern/3, tuple_to_list/1, system_info/1,
          universaltime_to_localtime/1]).
+-export([dt_get_tag/0, dt_get_tag_data/0, dt_prepend_vm_tag_data/1, dt_append_vm_tag_data/1,
+	 dt_put_tag/1, dt_restore_tag/1, dt_spread_tag/1]). 
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -572,6 +574,48 @@ display_string(_P1) ->
 dist_exit(_P1, _P2, _P3) ->
     erlang:nif_error(undefined).
 
+%% dt_append_vm_tag_data/1
+-spec erlang:dt_append_vm_tag_data(IoData) -> IoDataRet when
+      IoData :: iodata(),
+      IoDataRet :: iodata().
+dt_append_vm_tag_data(_IoData) ->
+    erlang:nif_error(undefined).
+
+%% dt_get_tag/0
+-spec erlang:dt_get_tag() -> binary() | undefined.
+dt_get_tag() ->
+    erlang:nif_error(undefined).
+
+%%  dt_get_tag_data/0
+-spec erlang:dt_get_tag_data() -> binary() | undefined.
+dt_get_tag_data() ->
+    erlang:nif_error(undefined).
+
+%% dt_prepend_vm_tag_data/1
+-spec erlang:dt_prepend_vm_tag_data(IoData) -> IoDataRet when
+      IoData :: iodata(),
+      IoDataRet :: iodata().
+dt_prepend_vm_tag_data(_IoData) ->
+    erlang:nif_error(undefined).
+
+%% dt_put_tag/1
+-spec erlang:dt_put_tag(IoData) -> binary() | undefined when
+      IoData :: iodata().
+dt_put_tag(_IoData) ->
+    erlang:nif_error(undefined).
+
+%% dt_restore_tag/1
+-spec erlang:dt_restore_tag(TagData) -> true when
+      TagData :: term().
+dt_restore_tag(_TagData) ->
+    erlang:nif_error(undefined).
+    
+%% dt_spread_tag/1
+-spec erlang:dt_spread_tag(boolean()) -> TagData when
+      TagData :: term().
+dt_spread_tag(_Bool) ->   
+    erlang:nif_error(undefined).
+
 %% erase/0
 -spec erase() -> [{Key, Val}] when
       Key :: term(),
@@ -748,8 +792,17 @@ halt() ->
 %% halt/1
 %% Shadowed by erl_bif_types: erlang:halt/1
 -spec halt(Status) -> no_return() when
-      Status :: non_neg_integer() | string().
+      Status :: non_neg_integer() | 'abort' | string().
 halt(_Status) ->
+    erlang:nif_error(undefined).
+
+%% halt/2
+%% Shadowed by erl_bif_types: erlang:halt/2
+-spec halt(Status, Options) -> no_return() when
+      Status :: non_neg_integer() | 'abort' | string(),
+      Options :: [Option],
+      Option :: {flush, boolean()}.
+halt(_Status, _Options) ->
     erlang:nif_error(undefined).
 
 %% hash/2
@@ -1672,7 +1725,8 @@ port_call(_Port, _Operation, _Data) ->
       links |
       name |
       input |
-      output.
+      output |
+      os_pid.
 
 -type port_info_result_item() ::
       {registered_name, RegName :: atom()} |
@@ -1681,7 +1735,8 @@ port_call(_Port, _Operation, _Data) ->
       {links, Pids :: [pid()]} |
       {name, String :: string()} |
       {input, Bytes :: non_neg_integer()} |
-      {output, Bytes :: non_neg_integer()}.
+      {output, Bytes :: non_neg_integer()} |
+      {os_pid, OsPid :: non_neg_integer() | 'undefined'}.
 
 %% Shadowed by erl_bif_types: erlang:port_info/1
 -spec erlang:port_info(Port) -> Result when
@@ -1745,7 +1800,6 @@ process_flag(_Flag, _Value) ->
       links |
       last_calls |
       memory |
-      message_binary |
       message_que_len |
       messages |
       min_heap_size |
@@ -1785,7 +1839,6 @@ process_flag(_Flag, _Value) ->
       {links, Pids :: [pid()]} |
       {last_calls, false | (Calls :: [mfa()])} |
       {memory, Size :: non_neg_integer()} |
-      {message_binary, BinInfo :: term()} |
       {message_que_len, MessageQueueLen :: non_neg_integer()} |
       {messages, MessageQueue :: [term()]} |
       {min_heap_size, MinHeapSize :: non_neg_integer()} |
@@ -2062,13 +2115,14 @@ tuple_to_list(_Tuple) ->
          (dist_ctrl) -> {Node :: node(),
                          ControllingEntity :: port() | pid()};
          (driver_version) -> string();
+	 (dynamic_trace) -> none | dtrace | systemtap;
+         (dynamic_trace_probes) -> boolean();
          (elib_malloc) -> false;
          (dist_buf_busy_limit) -> non_neg_integer();
          (fullsweep_after) -> {fullsweep_after, non_neg_integer()};
          (garbage_collection) -> [{atom(), integer()}];
-         (global_heaps_size) -> non_neg_integer();
          (heap_sizes) -> [non_neg_integer()];
-         (heap_type) -> private | shared | hybrid;
+         (heap_type) -> private;
          (info) -> binary();
          (kernel_poll) -> boolean();
          (loaded) -> binary();

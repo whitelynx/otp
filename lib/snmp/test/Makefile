@@ -2,7 +2,7 @@
 
 # %CopyrightBegin%
 # 
-# Copyright Ericsson AB 1997-2011. All Rights Reserved.
+# Copyright Ericsson AB 1997-2012. All Rights Reserved.
 # 
 # The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
@@ -79,7 +79,7 @@ COVER_SPEC_FILE = snmp.cover
 # ----------------------------------------------------
 # Release directory specification
 # ----------------------------------------------------
-RELSYSDIR = $(RELEASE_PATH)/snmp_test 
+RELSYSDIR = $(RELEASE_PATH)/snmp_test
 
 
 # ----------------------------------------------------
@@ -224,6 +224,9 @@ $(SNMP_BIN_TARGET_DIR)/Klas4.bin: $(SNMP_BIN_TARGET_DIR)/Klas3.bin
 
 $(SNMP_BIN_TARGET_DIR)/SA-MIB.bin: $(SNMP_BIN_TARGET_DIR)/OLD-SNMPEA-MIB.bin
 
+$(SNMP_BIN_TARGET_DIR)/Test3.bin: $(SNMP_BIN_TARGET_DIR)/Test2.bin
+
+
 # ----------------------------------------------------
 # Release Target
 # ---------------------------------------------------- 
@@ -232,10 +235,10 @@ include $(ERL_TOP)/make/otp_release_targets.mk
 release_spec:
 
 release_tests_spec: opt
-	$(INSTALL_DIR) $(RELSYSDIR)
-	$(INSTALL_DATA) $(RELTEST_FILES) $(COVER_SPEC_FILE) $(RELSYSDIR)
-	chmod -R u+w $(RELSYSDIR)
-	tar cf - snmp_test_data | (cd $(RELSYSDIR); tar xf -)
+	$(INSTALL_DIR) "$(RELSYSDIR)"
+	$(INSTALL_DATA) $(RELTEST_FILES) $(COVER_SPEC_FILE) "$(RELSYSDIR)"
+	chmod -R u+w "$(RELSYSDIR)"
+	tar cf - snmp_test_data | (cd "$(RELSYSDIR)"; tar xf -)
 
 release_docs_spec:
 
@@ -251,7 +254,7 @@ info:
 	@echo ""
 	@echo "ERL_COMPILE_FLAGS = $(ERL_COMPILE_FLAGS)"
 	@echo ""
-	@echo "RELSYSDIR         = $(RELSYSDIR)"
+	@echo "RELSYSDIR         = "$(RELSYSDIR)""
 	@echo ""
 	@echo "SOURCE            = $(SOURCE)"
 	@echo ""

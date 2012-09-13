@@ -1,7 +1,7 @@
 %% 
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2003-2010. All Rights Reserved.
+%% Copyright Ericsson AB 2003-2012. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -42,7 +42,11 @@
 -export([
          init_per_testcase/2, end_per_testcase/2,
 
-	all/0,groups/0,init_per_group/2,end_per_group/2, 
+	 all/0,
+	 groups/0,
+	 init_per_group/2,
+	 end_per_group/2, 
+
 	 open_and_close/1,
 	
 	 open_write_and_close1/1,
@@ -109,16 +113,21 @@ end_per_testcase(_Case, Config) when is_list(Config) ->
 %%======================================================================
 %% ?SKIP(not_yet_implemented).
 all() -> 
-[open_and_close, {group, open_write_and_close},
- {group, log_to_io}, {group, log_to_txt}].
+    [
+     open_and_close, 
+     {group, open_write_and_close},
+     {group, log_to_io}, 
+     {group, log_to_txt}].
 
 groups() -> 
-    [{open_write_and_close, [],
-  [open_write_and_close1, open_write_and_close2,
-   open_write_and_close3, open_write_and_close4]},
- {log_to_io, [], [log_to_io1, log_to_io2]},
- {log_to_txt, [],
-  [log_to_txt1, log_to_txt2, log_to_txt3]}].
+    [
+     {open_write_and_close, [],
+      [open_write_and_close1, open_write_and_close2,
+       open_write_and_close3, open_write_and_close4]},
+     {log_to_io, [], [log_to_io1, log_to_io2]},
+     {log_to_txt, [],
+      [log_to_txt1, log_to_txt2, log_to_txt3]}
+    ].
 
 init_per_group(_GroupName, Config) ->
 	Config.

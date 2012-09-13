@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 1999-2011. All Rights Reserved.
+%% Copyright Ericsson AB 1999-2012. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -822,6 +822,13 @@ bitstr({bin_element,_,E0,Size0,[Type,{unit,Unit}|Flags]}, St0) ->
 	{binary,#c_literal{val=V}} when is_bitstring(V) -> ok;
 	{_,_} ->
 	    throw(bad_binary)
+    end,
+    case Size1 of
+	#c_var{} -> ok;
+	#c_literal{val=Sz} when is_integer(Sz), Sz >= 0 -> ok;
+	#c_literal{val=undefined} -> ok;
+	#c_literal{val=all} -> ok;
+	_ -> throw(bad_binary)
     end,
     {#c_bitstr{val=E1,size=Size1,
 	       unit=#c_literal{val=Unit},

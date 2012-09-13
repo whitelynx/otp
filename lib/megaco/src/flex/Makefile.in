@@ -1,7 +1,7 @@
 # 
 # %CopyrightBegin%
 #
-# Copyright Ericsson AB 2001-2011. All Rights Reserved.
+# Copyright Ericsson AB 2001-2012. All Rights Reserved.
 #
 # The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
@@ -104,10 +104,6 @@ ENABLE_MEGACO_FLEX_SCANNER_LINENO = @ENABLE_MEGACO_FLEX_SCANNER_LINENO@
 endif
 endif
 
-ifeq ($(findstring vxworks,$(TARGET)),vxworks)
-        DED_INCLUDES += -I$(ERL_TOP)/erts/etc/vxworks
-endif
-
 PRIVDIR = ../../priv
 LIBDIR  = $(PRIVDIR)/lib/$(TARGET)
 OBJDIR  = $(PRIVDIR)/obj/$(TARGET)
@@ -146,14 +142,9 @@ ifeq ($(findstring win32,$(TARGET)), win32)
 FLEX_SCANNER_SO = 
 SOLIBS = $(FLEX_SCANNER_SO)
 else
-ifeq ($(findstring vxworks,$(TARGET)),vxworks)
-FLEX_SCANNER_SO = 
-SOLIBS = $(FLEX_SCANNER_SO)
-else
 FLEX_SCANNER_SO = $(LIBDIR)/$(STD_DRV).$(DED_EXT) 
 FLEX_SCANNER_MT_SO = $(LIBDIR)/$(MT_DRV).$(DED_EXT) 
 SOLIBS = $(FLEX_SCANNER_SO) $(FLEX_SCANNER_MT_SO) 
-endif
 endif
 
 
@@ -271,16 +262,16 @@ include $(ERL_TOP)/make/otp_release_targets.mk
 
 
 release_spec: opt
-	$(INSTALL_DIR)  $(RELSYSDIR)/ebin
-	$(INSTALL_DIR)  $(RELSYSDIR)/src
-	$(INSTALL_DIR)  $(RELSYSDIR)/src/flex
-	$(INSTALL_DIR)  $(RELSYSDIR)/priv/lib
-	$(INSTALL_DIR)  $(RELSYSDIR)/include
-	$(INSTALL_DATA) $(ERL_FILES) $(INTERNAL_HRL_FILES) $(RELSYSDIR)/src/flex
-	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
+	$(INSTALL_DIR)  "$(RELSYSDIR)/ebin"
+	$(INSTALL_DIR)  "$(RELSYSDIR)/src"
+	$(INSTALL_DIR)  "$(RELSYSDIR)/src/flex"
+	$(INSTALL_DIR)  "$(RELSYSDIR)/priv/lib"
+	$(INSTALL_DIR)  "$(RELSYSDIR)/include"
+	$(INSTALL_DATA) $(ERL_FILES) $(INTERNAL_HRL_FILES) "$(RELSYSDIR)/src/flex"
+	$(INSTALL_DATA) $(TARGET_FILES) "$(RELSYSDIR)/ebin"
 ifeq ($(ENABLE_MEGACO_FLEX_SCANNER),true)
-	$(INSTALL_DATA) $(FLEX_FILES) $(C_TARGETS) $(RELSYSDIR)/src/flex
-	$(INSTALL_PROGRAM) $(SOLIBS) $(RELSYSDIR)/priv/lib
+	$(INSTALL_DATA) $(FLEX_FILES) $(C_TARGETS) "$(RELSYSDIR)/src/flex"
+	$(INSTALL_PROGRAM) $(SOLIBS) "$(RELSYSDIR)/priv/lib"
 endif
 
 

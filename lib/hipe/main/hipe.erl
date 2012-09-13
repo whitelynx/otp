@@ -2,7 +2,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2001-2011. All Rights Reserved.
+%% Copyright Ericsson AB 2001-2012. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -482,12 +482,7 @@ compile(Name, File, Opts0) when is_atom(Name) ->
 
 compile_core(Name, Core0, File, Opts) ->
   Core = cerl:from_records(Core0),
-  Core1 = case (erlang:system_info(heap_type) =:= hybrid)
-	    andalso proplists:get_bool(hybrid, Opts) of
-	    true -> cerl_hybrid_transform:transform(Core, Opts);
-	    false -> Core
-	  end,
-  compile(Name, Core1, File, Opts).
+  compile(Name, Core, File, Opts).
 
 %% @spec compile(Name, Core, File, options()) ->
 %%           {ok, {Target, Binary}} | {error, Reason}

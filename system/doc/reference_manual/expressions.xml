@@ -4,7 +4,7 @@
 <chapter>
   <header>
     <copyright>
-      <year>2003</year><year>2011</year>
+      <year>2003</year><year>2012</year>
       <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
@@ -235,10 +235,6 @@ spawn(m, init, [])</code>
 Fun1 = fun(X) -> X+1 end
 Fun1(3)
 => 4
-
-Fun2 = {lists,append}
-Fun2([1,2], [3,4])
-=> [1,2,3,4]
 
 fun lists:append/2([1,2], [3,4])
 => [1,2,3,4]</code>
@@ -685,7 +681,7 @@ Expr1 <input>op</input> Expr2</pre>
 8> <input>2#10 bor 2#01.</input>
 3
 9> <input>a + 10.</input>
-** exception error: bad argument in an arithmetic expression
+** exception error: an error occurred when evaluating an arithmetic expression
      in operator  +/2
         called as a + 10
 10> <input>1 bsl (1 bsl 64).</input>
@@ -1000,13 +996,6 @@ fun (Arg1,...,ArgN) -> Name(Arg1,...,ArgN) end</pre>
       <c>Module</c>. A fun defined in this way will not be dependent on
       the code for module in which it is defined.
       </p>
-    <p>When applied to a number N of arguments, a tuple
-      <c>{Module,FunctionName}</c> is interpreted as a fun, referring
-      to the function <c>FunctionName</c> with arity N in the module
-      <c>Module</c>. The function must be exported.
-      <em>This usage is deprecated.</em> Use <c>fun Module:Name/Arity</c>
-      instead.
-      See <seealso marker="#calls">Function Calls</seealso> for an example.</p>
     <p>More examples can be found in <em>Programming Examples</em>.</p>
   </section>
 

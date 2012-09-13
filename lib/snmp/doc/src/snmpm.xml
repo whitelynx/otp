@@ -4,7 +4,7 @@
 <erlref>
   <header>
     <copyright>
-      <year>2004</year><year>2011</year>
+      <year>2004</year><year>2012</year>
       <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
@@ -173,16 +173,16 @@ sec_level() = noAuthNoPriv | authNoPriv | authPriv
       </type>
       <desc>
         <p>Register the manager entity (=user) responsible for specific 
-          agent(s). </p>
+	agent(s). </p>
 
         <p><c>Module</c> is the callback module (snmpm_user behaviour) which 
-          will be called whenever something happens (detected 
-          agent, incoming reply or incoming trap/notification).
-          Note that this could have already been done as a 
-          consequence of the node config. (see users.conf).</p>
+	will be called whenever something happens (detected 
+	agent, incoming reply or incoming trap/notification).
+	Note that this could have already been done as a 
+	consequence of the node config. (see users.conf).</p>
 
-        <p>The argument <c>DefaultAgentConfig</c> is used as default values when 
-          this user register agents.</p>
+        <p>The argument <c>DefaultAgentConfig</c> is used as default 
+	values when this user register agents.</p>
 
         <p>The type of <c>Val</c> depends on <c>Item</c>: </p>
 <code type="none"><![CDATA[
@@ -1236,6 +1236,38 @@ priv_key = [integer()]   (length is 16 if priv = usmDESPrivProtocol | usmAesCfb1
           <c>LogFile</c> defaults to "snmpm.log". 
           See <seealso marker="snmp#log_to_txt">snmp:log_to_txt</seealso> 
           for more info.</p>
+
+        <marker id="log_to_io"></marker>
+      </desc>
+    </func>
+
+    <func>
+      <name>log_to_io(LogDir) -> ok | {error, Reason}</name>
+      <name>log_to_io(LogDir, Mibs) -> ok | {error, Reason}</name>
+      <name>log_to_io(LogDir, Mibs) -> ok | {error, Reason}</name>
+      <name>log_to_io(LogDir, Mibs, LogName) ->  ok | {error, Reason}</name>
+      <name>log_to_io(LogDir, Mibs, LogName, LogFile) ->  ok | {error, Reason}</name>
+      <name>log_to_io(LogDir, Mibs, LogName, LogFile, Start) ->  ok | {error, Reason}</name>
+      <name>log_to_io(LogDir, Mibs, LogName, LogFile, Start, Stop)  -> ok | {error, Reason}</name>
+      <fsummary>Convert an Audit Trail Log to text format</fsummary>
+      <type>
+        <v>LogDir = string()</v>
+        <v>Mibs = [MibName]</v>
+        <v>MibName = string()</v>
+        <v>LogName = string()</v>
+        <v>LogFile = string()</v>
+        <v>Start = Stop = null | datetime() | {local_time,datetime()} |  {universal_time,datetime()} </v>
+        <v>Reason = disk_log_open_error() | file_open_error() | term()</v>
+        <v>disk_log_open_error() = {LogName, term()}</v>
+        <v>file_open_error() = {OutFile, term()}</v>
+      </type>
+      <desc>
+        <p>Converts an Audit Trail Log to a readable format and 
+	prints it on stdio. 
+	<c>LogName</c> defaults to "snmpm_log". 
+	<c>LogFile</c> defaults to "snmpm.log". 
+	See <seealso marker="snmp#log_to_io">snmp:log_to_io</seealso> 
+	for more info.</p>
 
         <marker id="change_log_size"></marker>
       </desc>

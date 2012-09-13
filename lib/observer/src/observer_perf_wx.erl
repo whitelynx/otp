@@ -123,7 +123,7 @@ init([Notebook, Parent]) ->
 		  }}
    catch _:Err ->
 	   io:format("~p crashed ~p: ~p~n",[?MODULE, Err, erlang:get_stacktrace()]),
-	   {error, Err}
+	   {stop, Err}
    end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -278,7 +278,7 @@ collect_data(?IO_W, {N, Q}) ->
     end.
 
 mem_types() ->
-    [total, processes, system, atom, binary, code, ets].
+    [total, processes, atom, binary, code, ets].
 
 lmax([]) -> 0;
 lmax(List) ->

@@ -5,7 +5,7 @@
   <header>
     <copyright>
       <year>2008</year>
-      <year>2011</year>
+      <year>2012</year>
       <holder>Ericsson AB, All Rights Reserved</holder>
     </copyright>
     <legalnotice>
@@ -33,6 +33,60 @@
     <rev>A</rev>
     <file>notes.xml</file>
   </header>
+
+<section><title>Public_Key 0.16</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    Add crypto and public_key support for the hash functions
+	    SHA224, SHA256, SHA384 and SHA512 and also hmac and
+	    rsa_sign/verify support using these hash functions.
+	    Thanks to Andreas Schultz for making a prototype.</p>
+          <p>
+	    Own Id: OTP-9908</p>
+        </item>
+        <item>
+          <p>
+	    Optimize RSA private key handling in <c>crypto</c> and
+	    <c>public_key</c>.</p>
+          <p>
+	    Own Id: OTP-10065</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+<section><title>Public_Key 0.15</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    Changed ssh implementation to use the public_key
+	    application for all public key handling. This is also a
+	    first step for enabling a callback API for supplying
+	    public keys and handling keys protected with password
+	    phrases. </p>
+          <p>
+	    Additionally the test suites where improved so that they
+	    do not copy the users keys to test server directories as
+	    this is a security liability. Also ipv6 and file access
+	    issues found in the process has been fixed.</p>
+          <p>
+	    This change also solves OTP-7677 and OTP-7235</p>
+          <p>
+	    This changes also involves some updates to public_keys
+	    ssh-functions.</p>
+          <p>
+	    Own Id: OTP-9911</p>
+        </item>
+      </list>
+    </section>
+
+</section>
 
 <section><title>Public_Key 0.14</title>
 

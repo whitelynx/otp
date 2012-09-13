@@ -1,7 +1,7 @@
 /*
  * %CopyrightBegin%
  *
- * Copyright Ericsson AB 2001-2010. All Rights Reserved.
+ * Copyright Ericsson AB 2001-2012. All Rights Reserved.
  *
  * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
@@ -169,6 +169,7 @@ extern Sint erts_no_of_not_connected_dist_entries;
 
 extern DistEntry *erts_this_dist_entry;
 extern ErlNode *erts_this_node;
+extern char *erts_this_node_sysname; /* must match erl_node_tables.c */
 
 DistEntry *erts_channel_no_to_dist_entry(Uint);
 DistEntry *erts_sysname_to_connected_dist_entry(Eterm);

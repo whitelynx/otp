@@ -4,7 +4,7 @@
 <chapter>
   <header>
     <copyright>
-      <year>2004</year><year>2011</year>
+      <year>2004</year><year>2012</year>
       <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
@@ -30,6 +30,151 @@
   </header>
   <p>This document describes the changes made to the Compiler
     application.</p>
+
+<section><title>Compiler 4.8.2</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+	    Modules with very many functions would compile very
+	    slowly.</p>
+          <p>
+	    Own Id: OTP-10123</p>
+        </item>
+        <item>
+          <p>
+	    <c>compile:forms/2</c> will now use a
+	    {source,SourceFilePath} to set the source returned by
+	    <c>module_info(compile)</c> (Thanks to José Valim)</p>
+          <p>
+	    Own Id: OTP-10150</p>
+        </item>
+        <item>
+          <p>
+	    A process which had enabled trap_exit would receive EXIT
+	    messages after calling the compiler. (Thanks to Jeremy
+	    Heater.)</p>
+          <p>
+	    Own Id: OTP-10171</p>
+        </item>
+        <item>
+          <p>
+	    Fix messages ordering with column numbers</p>
+          <p>
+	    Own Id: OTP-10183</p>
+        </item>
+        <item>
+          <p>
+	    sys_pre_expand: Fix BASE never being set</p>
+          <p>
+	    Commit a612e99fb5aaa934fe5a8591db0f083d7fa0b20a turned
+	    module attributes from 2-tuples to 3-tuples but forgot to
+	    update get_base/1, breaking BASE for parametric modules.</p>
+          <p>
+	    Own Id: OTP-10184</p>
+        </item>
+        <item>
+          <p>
+	    The compiler will now issue a warning if literal tuple
+	    funs are used. For example, {erlang,is_tuple}(X) will now
+	    generate a warning.</p>
+          <p>
+	    Own Id: OTP-10185</p>
+        </item>
+        <item>
+          <p>
+	    The compiler will now warn for illegal sizes for segments
+	    in binary construction. For example,
+	    &lt;&lt;X:(2.5)&gt;&gt; will now cause the compiler to
+	    issue a warning.</p>
+          <p>
+	    Own Id: OTP-10197</p>
+        </item>
+        <item>
+          <p>
+	    Fix the erlc -MP flag</p>
+          <p>
+	    Because of a copy-and-paste error in erlc.c, the -MP flag
+	    had the same effect as -MG. As a workaround, you had to
+	    pass +makedep_phony to enable the MP option. This patch
+	    makes -MP work as intended.</p>
+          <p>
+	    Own Id: OTP-10211</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+<section><title>Compiler 4.8.1</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+	    In rare circumstance, the compiler could crash when
+	    compiling a case statement. (Thanks to Hakan Mattsson.)</p>
+          <p>
+	    Own Id: OTP-9842</p>
+        </item>
+        <item>
+	    <p>Calling a guard test (such as is_list/1) from the
+	    top-level in a guard, would cause a compiler crash if
+	    there was a local definition with the same name.
+	    Corrected to reject the program with an error
+	    message.</p>
+          <p>
+	    Own Id: OTP-9866</p>
+        </item>
+        <item>
+	    <p>Using <c>get/1</c> in a <c>try</c> block could in some
+	    cases cause an internal compiler error. (Thanks to Eric
+	    Merritt.)</p>
+          <p>
+	    Own Id: OTP-9867</p>
+        </item>
+        <item>
+          <p>
+	    An unexported on_load function would not get run if the
+	    module was compiled with the <c>inline</c> option.
+	    (Thanks to Yiannis Tsiouris.)</p>
+          <p>
+	    Own Id: OTP-9910</p>
+        </item>
+        <item>
+          <p>
+	    Fixed a discrepancy in compile_info</p>
+          <p>
+	    The BEAM disassembler used the atom 'none' to signify the
+	    absence of a compile_info chunk in a .beam file. This
+	    clashed with the type declaration of the compile_info
+	    field of a #beam_file{} record as containing a list. Now
+	    [] signifies the absence of this chunk. This simplifies
+	    the code and avoids a dialyzer warning.</p>
+          <p>
+	    Own Id: OTP-9917</p>
+        </item>
+        <item>
+          <p>
+	    Fix typo in `compile' doc: unmatched parenthesis (Thanks
+	    to Ricardo Catalinas Jiménez)</p>
+          <p>
+	    Own Id: OTP-9919</p>
+        </item>
+        <item>
+	    <p>In a <c>try</c>...<c>catch</c> statement that always
+	    returned <c>false</c>, the compiler would remove calls to
+	    BIFs that could not cause an exception (such as
+	    <c>put/2</c>). Example of such code: <c>try put(K, V),
+	    false catch _:_ -&gt; false end.</c></p>
+          <p>
+	    Own Id: OTP-9982</p>
+        </item>
+      </list>
+    </section>
+
+</section>
 
 <section><title>Compiler 4.8</title>
 

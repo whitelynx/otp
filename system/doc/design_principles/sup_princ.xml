@@ -4,7 +4,7 @@
 <chapter>
   <header>
     <copyright>
-      <year>1997</year><year>2011</year>
+      <year>1997</year><year>2012</year>
       <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
@@ -136,7 +136,7 @@ init(...) ->
         M = F = atom()
         A = [term()]
     Restart = permanent | transient | temporary
-    Shutdown = brutal_kill | integer()>=0 | infinity
+    Shutdown = brutal_kill | integer()>0 | infinity
     Type = worker | supervisor
     Modules = [Module] | dynamic
         Module = atom()]]></code>

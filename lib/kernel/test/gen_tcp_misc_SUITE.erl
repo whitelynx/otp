@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 1998-2011. All Rights Reserved.
+%% Copyright Ericsson AB 1998-2012. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -24,7 +24,8 @@
 
 -export([all/0, suite/0,groups/0,init_per_suite/1, end_per_suite/1, 
 	 init_per_group/2,end_per_group/2, 
-	 controlling_process/1, no_accept/1, close_with_pending_output/1,
+	 controlling_process/1, controlling_process_self/1,
+	 no_accept/1, close_with_pending_output/1,
 	 data_before_close/1, iter_max_socks/1, get_status/1,
 	 passive_sockets/1, accept_closed_by_other_process/1,
 	 init_per_testcase/2, end_per_testcase/2,
@@ -39,7 +40,8 @@
 	 accept_timeouts_in_order/1,accept_timeouts_in_order2/1,
 	 accept_timeouts_in_order3/1,accept_timeouts_mixed/1, 
 	 killing_acceptor/1,killing_multi_acceptors/1,killing_multi_acceptors2/1,
-	 several_accepts_in_one_go/1,active_once_closed/1, send_timeout/1, send_timeout_active/1, 
+	 several_accepts_in_one_go/1, accept_system_limit/1,
+	 active_once_closed/1, send_timeout/1, send_timeout_active/1,
 	 otp_7731/1, zombie_sockets/1, otp_7816/1, otp_8102/1,
          otp_9389/1]).
 
@@ -57,7 +59,7 @@ end_per_testcase(_Func, Config) ->
 suite() -> [{ct_hooks,[ts_install_cth]}].
 
 all() -> 
-    [controlling_process, no_accept,
+    [controlling_process, controlling_process_self, no_accept,
      close_with_pending_output, data_before_close,
      iter_max_socks, passive_sockets,
      accept_closed_by_other_process, otp_3924, closed_socket,
@@ -71,7 +73,7 @@ all() ->
      accept_timeouts_in_order, accept_timeouts_in_order2,
      accept_timeouts_in_order3, accept_timeouts_mixed,
      killing_acceptor, killing_multi_acceptors,
-     killing_multi_acceptors2, several_accepts_in_one_go,
+     killing_multi_acceptors2, several_accepts_in_one_go, accept_system_limit,
      active_once_closed, send_timeout, send_timeout_active, otp_7731,
      zombie_sockets, otp_7816, otp_8102, otp_9389].
 
@@ -306,45 +308,55 @@ not_owner(S) ->
 	    ok
     end.
 
+controlling_process_self(doc) ->
+    ["Open a listen port and assign the controlling process to "
+     "it self, then exit and make sure the port is closed properly."];
+controlling_process_self(Config) when is_list(Config) ->
+    S = self(),
+    process_flag(trap_exit,true),
+    spawn_link(fun() ->
+		       {ok,Sock} = gen_tcp:listen(0,[]),
+		       S ! {socket, Sock},
+		       ok = gen_tcp:controlling_process(Sock,self()),
+		       S ! done
+	       end),
+    receive
+	done ->
+	    receive
+		{socket,Sock} ->
+		    process_flag(trap_exit,false),
+		    %% Make sure the port is invalid after process crash
+		    {error,einval} = inet:port(Sock)
+	    end;
+	Msg when element(1,Msg) /= socket ->
+	    process_flag(trap_exit,false),
+	    exit({unknown_msg,Msg})
+    end.
+    
+
 no_accept(doc) ->
     ["Open a listen port and connect to it, then close the listen port ",
      "without doing any accept.  The connected socket should receive ",
      "a tcp_closed message."];
 no_accept(suite) -> [];
 no_accept(Config) when is_list(Config) ->
-    case os:type() of
-	vxworks ->
-	    {skip,"Too tough for vxworks"};
-	_ ->
-	    no_accept2()
+    {ok, L} = gen_tcp:listen(0, []),
+    {ok, {_, Port}} = inet:sockname(L),
+    {ok, Client} = gen_tcp:connect(localhost, Port, []),
+    ok = gen_tcp:close(L),
+    receive
+        {tcp_closed, Client} ->
+            ok
+    after 5000 ->
+            ?line test_server:fail(never_closed)
+    
     end.
-
-no_accept2() ->
-    ?line {ok, L} = gen_tcp:listen(0, []),
-    ?line {ok, {_, Port}} = inet:sockname(L),
-    ?line {ok, Client} = gen_tcp:connect(localhost, Port, []),
-    ?line ok = gen_tcp:close(L),
-    ?line receive
-	      {tcp_closed, Client} ->
-		  ok
-	  after 5000 ->
-		  ?line test_server:fail(never_closed)
-	  
-	  end.
 
 close_with_pending_output(doc) ->
     ["Send several packets to a socket and close it.  All packets should arrive ",
      "to the other end."];
 close_with_pending_output(suite) -> [];
 close_with_pending_output(Config) when is_list(Config) ->
-    case os:type() of
-	vxworks ->
-	    {skipped,"Too tough for vxworks"};
-	_ ->
-	    close_with_pending_output2()
-    end.
-
-close_with_pending_output2() ->
     ?line {ok, L} = gen_tcp:listen(0, [binary, {active, false}]),
     ?line {ok, {_, Port}} = inet:sockname(L),
     ?line Packets = 16,
@@ -395,22 +407,16 @@ otp_3924(doc) ->
 otp_3924(suite) -> [];
 otp_3924(Config) when is_list(Config) ->
     MaxDelay = (case has_superfluous_schedulers() of
-		    true -> 4;
-		    false -> 1
-		end
-		* case {erlang:system_info(debug_compiled),
-			erlang:system_info(lock_checking)} of
-		      {true, _} -> 6;
-		      {_, true} -> 2;
-		      _ -> 1
-		  end * ?OTP_3924_MAX_DELAY),
-    case os:type() of
-	vxworks ->
-%%	    {skip,"Too tough for vxworks"};
-	    otp_3924_1(MaxDelay);
-	_ ->
-	    otp_3924_1(MaxDelay)
-    end.
+	    true -> 4;
+	    false -> 1
+	end
+	* case {erlang:system_info(debug_compiled),
+		erlang:system_info(lock_checking)} of
+	    {true, _} -> 6;
+	    {_, true} -> 2;
+	    _ -> 1
+	end * ?OTP_3924_MAX_DELAY),
+    otp_3924_1(MaxDelay).
 
 otp_3924_1(MaxDelay) ->
     Dog = test_server:timetrap(test_server:seconds(240)),
@@ -531,26 +537,18 @@ otp_3924_sender(Receiver, Host, Port, Data) ->
 data_before_close(doc) ->
     ["Tests that a huge amount of data can be received before a close."];
 data_before_close(Config) when is_list(Config) ->
-    case os:type() of
-	vxworks ->
-	    {skip,"Too tough for vxworks"};
-	_ ->
-	    data_before_close2()
-    end.
-
-data_before_close2() ->
-    ?line {ok, L} = gen_tcp:listen(0, [binary]),
-    ?line {ok, {_, TcpPort}} = inet:sockname(L),
-    ?line Bytes = 256*1024,
-    ?line spawn_link(fun() -> huge_sender(TcpPort, Bytes) end),
-    ?line {ok, A} = gen_tcp:accept(L),
-    ?line case count_bytes_recv(A, 0) of
-	      {Bytes, Result} ->
-		  io:format("Result: ~p", [Result]);
-	      {Wrong, Result} ->
-		  io:format("Result: ~p", [Result]),
-		  test_server:fail({wrong_count, Wrong})
-	  end,
+    {ok, L} = gen_tcp:listen(0, [binary]),
+    {ok, {_, TcpPort}} = inet:sockname(L),
+    Bytes = 256*1024,
+    spawn_link(fun() -> huge_sender(TcpPort, Bytes) end),
+    {ok, A} = gen_tcp:accept(L),
+    case count_bytes_recv(A, 0) of
+        {Bytes, Result} ->
+            io:format("Result: ~p", [Result]);
+        {Wrong, Result} ->
+            io:format("Result: ~p", [Result]),
+            test_server:fail({wrong_count, Wrong})
+    end,
     ok.
 
 count_bytes_recv(Sock, Total) ->
@@ -583,32 +581,18 @@ get_status(Config) when is_list(Config) ->
     ?line {ok,{socket,Pid,_,_}} = gen_tcp:listen(5678,[]),
     ?line {status,Pid,_,_} = sys:get_status(Pid).
 
+-define(RECOVER_SLEEP, 60000).
+-define(RETRY_SLEEP, 15000).
+
 iter_max_socks(doc) ->
     ["Open as many sockets as possible. Do this several times and check ",
      "that we get the same number of sockets every time."];
 iter_max_socks(Config) when is_list(Config) ->
-    case os:type() of
-	vxworks ->
-	    {skip,"Too tough for vxworks"};
-	_ ->
-	    iter_max_socks2()
-    end.
-
--define(RECOVER_SLEEP, 60000).
--define(RETRY_SLEEP, 15000).
-
-iter_max_socks2() ->
-    ?line N = 
-	case os:type() of
-	    vxworks ->
-		10;
-	    _ ->
-		20
-	end,
+    N = 20,
     L = do_iter_max_socks(N, initalize),
-    ?line io:format("Result: ~p",[L]),
-    ?line all_equal(L),
-    ?line {comment, "Max sockets: " ++ integer_to_list(hd(L))}.
+    io:format("Result: ~p",[L]),
+    all_equal(L),
+    {comment, "Max sockets: " ++ integer_to_list(hd(L))}.
 
 do_iter_max_socks(0, _) ->
     [];
@@ -1837,6 +1821,54 @@ wait_until_accepting(Proc,N) ->
     end.
 
 
+accept_system_limit(suite) ->
+    [];
+accept_system_limit(doc) ->
+    ["Check that accept returns {error, system_limit} "
+     "(and not {error, enfile}) when running out of ports"];
+accept_system_limit(Config) when is_list(Config) ->
+    ?line {ok, LS} = gen_tcp:listen(0, []),
+    ?line {ok, TcpPort} = inet:port(LS),
+    ?line Connector = spawn_link(fun () -> connector(TcpPort) end),
+    ?line ok = acceptor(LS, false, []),
+    ?line Connector ! stop,
+    ok.
+
+acceptor(LS, GotSL, A) ->
+    case gen_tcp:accept(LS, 1000) of
+	{ok, S} ->
+	    acceptor(LS, GotSL, [S|A]);
+	{error, system_limit} ->
+	    acceptor(LS, true, A);
+	{error, timeout} when GotSL ->
+	    ok;
+	{error, timeout} ->
+	    error
+    end.
+
+connector(TcpPort) ->
+    ManyPorts = open_ports([]),
+    ConnF = fun (Port) ->
+		    case catch gen_tcp:connect({127,0,0,1}, TcpPort, []) of
+			{ok, Sock} ->
+			    Sock;
+			_Error ->
+			    port_close(Port)
+		    end
+	    end,
+    R = [ConnF(Port) || Port <- lists:sublist(ManyPorts, 10)],
+    receive stop -> R end.
+
+open_ports(L) ->
+    case catch open_port({spawn_driver, "ram_file_drv"}, []) of
+	Port when is_port(Port) ->
+	    open_ports([Port|L]);
+	{'EXIT', {system_limit, _}} ->
+	    {L1, L2} = lists:split(5, L),
+	    [port_close(Port) || Port <- L1],
+	    L2
+    end.
+
 
 active_once_closed(suite) ->
     [];
@@ -1995,7 +2027,7 @@ send_timeout_active(Config) when is_list(Config) ->
 		?line {error,timeout} = 
 		    Loop(fun() ->
 				 receive
-				     {tcp, Sock, _Data} ->
+				     {tcp, _Sock, _Data} ->
 					 inet:setopts(A, [{active, once}]),
 					 Res = gen_tcp:send(A,lists:duplicate(1000, $a)),
 					 %erlang:display(Res),
@@ -2487,7 +2519,7 @@ otp_8102_do(LSocket, PortNum, {Bin,PType}) ->
 otp_9389(doc) -> ["Verify packet_size handles long HTTP header lines"];
 otp_9389(suite) -> [];
 otp_9389(Config) when is_list(Config) ->
-    ?line {ok, LS} = gen_tcp:listen(0, []),
+    ?line {ok, LS} = gen_tcp:listen(0, [{active,false}]),
     ?line {ok, {_, PortNum}} = inet:sockname(LS),
     io:format("Listening on ~w with port number ~p\n", [LS, PortNum]),
     OrigLinkHdr = "/" ++ string:chars($S, 8192),

@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2004-2011. All Rights Reserved.
+%% Copyright Ericsson AB 2004-2012. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -33,7 +33,7 @@
 
 -export([all/0, suite/0,groups/0,init_per_suite/1, end_per_suite/1, 
 	 init_per_group/2,end_per_group/2, 
-	 init_per_testcase/2, fin_per_testcase/2]).
+	 init_per_testcase/2, end_per_testcase/2]).
 
 -export([create_join_thread/1,
 	 equal_tids/1,
@@ -246,11 +246,18 @@ dw_atomic_massage(Config) ->
 %%
 %%
 
-init_per_testcase(_Case, Config) ->
-    Dog = ?t:timetrap(?DEFAULT_TIMEOUT),
-    [{watchdog, Dog}|Config].
+init_per_testcase(Case, Config) ->
+    case inet:gethostname() of
+	{ok,"fenris"} when Case == max_threads ->
+	    %% Cannot use os:type+os:version as not all
+	    %% solaris10 machines are buggy.
+	    {skip, "This machine is buggy"};
+	_Else ->
+	    Dog = ?t:timetrap(?DEFAULT_TIMEOUT),
+	    [{watchdog, Dog}|Config]
+    end.
 
-fin_per_testcase(_Case, Config) ->
+end_per_testcase(_Case, Config) ->
     Dog = ?config(watchdog, Config),
     ?t:timetrap_cancel(Dog),
     ok.

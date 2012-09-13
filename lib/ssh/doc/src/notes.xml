@@ -4,7 +4,7 @@
 <chapter>
   <header>
     <copyright>
-      <year>2004</year><year>2011</year>
+      <year>2004</year><year>2012</year>
       <holder>Ericsson AB. All Rights Reserved.</holder>
     </copyright>
     <legalnotice>
@@ -28,6 +28,178 @@
     <rev>%VSN%</rev>
     <file>notes.xml</file>
   </header>
+
+<section><title>Ssh 2.1.1</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+	    Ssh now only sends one channel close message under all
+	    circumstances, before it would sometimes incorrectly send
+	    two.</p>
+          <p>
+	    Own Id: OTP-10060</p>
+        </item>
+        <item>
+          <p>
+	    The options check mistreated the ip_v6_disable-option,
+	    and did not handle some, at the moment, undocumented
+	    options correctly.</p>
+          <p>
+	    Own Id: OTP-10061</p>
+        </item>
+        <item>
+          <p>
+	    The channel id in a channel failure message, sent to the
+	    peer, is now in all cases the remote channel id</p>
+          <p>
+	    Own Id: OTP-10062</p>
+        </item>
+        <item>
+          <p>
+	    Improved handling of multiple closes to avoid occasional
+	    crashes when a channel is closed more than once.</p>
+          <p>
+	    Own Id: OTP-10112</p>
+        </item>
+        <item>
+          <p>
+	    Fix lib/src/test/ssh_basic_SUITE.erl to fix IPv6 option
+	    typos</p>
+          <p>
+	    Fixed incorrect option "ipv6_disable" to "ipv6_disabled"
+	    as documented in the ssh manual.</p>
+          <p>
+	    Own Id: OTP-10219</p>
+        </item>
+        <item>
+          <p>
+	    SSH: Make "auth_methods" server option re-usable</p>
+          <p>
+	    The 'auth_methods' option is used by the server side of
+	    the SSH code to tell a connecting SSH client about the
+	    authentication methods that are supported by the server.
+	    The code still extracts and handles the 'auth_methods'
+	    option from Opts in appropriate places, but the Opts
+	    checking code in ssh.erl didn't allow that option to be
+	    specified.</p>
+          <p>
+	    Own Id: OTP-10224</p>
+        </item>
+        <item>
+          <p>
+	    Use the correct channel id when adjusting the channel
+	    window</p>
+          <p>
+	    Own Id: OTP-10232</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+<section><title>Ssh 2.1</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+	    All keys in authorized_keys are considerd, wrongly only
+	    the first one was before.</p>
+          <p>
+	    Own Id: OTP-7235</p>
+        </item>
+        <item>
+          <p>
+	    ssh daemon now properly handles ras host keys, in
+	    previous versions only dsa host keys sufficed to set up a
+	    connection.</p>
+          <p>
+	    Own Id: OTP-7677</p>
+        </item>
+        <item>
+          <p>
+	    ssh:shell/3 and ssh:connect/3 does not hang anymore if
+	    connection negotiation fails</p>
+          <p>
+	    Own Id: OTP-8111</p>
+        </item>
+        <item>
+          <p>
+	    Improve check so that we will not try to read ssh packet
+	    length indicator if not sure we have enough data.</p>
+          <p>
+	    Own Id: OTP-8380</p>
+        </item>
+        <item>
+          <p>
+	    Do not try to use user interaction when it is disabled.</p>
+          <p>
+	    Own Id: OTP-9466 Aux Id: seq11886 </p>
+        </item>
+        <item>
+          <p>
+	    Improved error handling of internal errors i the ssh
+	    connection handling process</p>
+          <p>
+	    Own Id: OTP-9905</p>
+        </item>
+        <item>
+          <p>
+	    sftp daemon generates file handles correct</p>
+          <p>
+	    Own Id: OTP-9948</p>
+        </item>
+      </list>
+    </section>
+
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    Document supported algorithms</p>
+          <p>
+	    Own Id: OTP-8109</p>
+        </item>
+        <item>
+          <p>
+	    Graceful handling of premature close from an sftp client.</p>
+          <p>
+	    Own Id: OTP-9391 Aux Id: seq11838 </p>
+        </item>
+        <item>
+          <p>
+	    Changed ssh implementation to use the public_key
+	    application for all public key handling. This is also a
+	    first step for enabling a callback API for supplying
+	    public keys and handling keys protected with password
+	    phrases. </p>
+          <p>
+	    Additionally the test suites where improved so that they
+	    do not copy the users keys to test server directories as
+	    this is a security liability. Also ipv6 and file access
+	    issues found in the process has been fixed.</p>
+          <p>
+	    This change also solves OTP-7677 and OTP-7235</p>
+          <p>
+	    This changes also involves some updates to public_keys
+	    ssh-functions.</p>
+          <p>
+	    Own Id: OTP-9911</p>
+        </item>
+        <item>
+          <p>
+	    Added options for the ssh client to support user keys
+	    files that are password protected.</p>
+          <p>
+	    Own Id: OTP-10036 Aux Id: OTP-6400, Seq10595 </p>
+        </item>
+      </list>
+    </section>
+
+</section>
 
 <section><title>Ssh 2.0.9</title>
 

@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %% 
-%% Copyright Ericsson AB 1997-2011. All Rights Reserved.
+%% Copyright Ericsson AB 1997-2012. All Rights Reserved.
 %% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -31,7 +31,6 @@
 
 -type option() ::
         {active,          true | false | once} |
-        {bit8,            clear | set | on | off} |
         {buffer,          non_neg_integer()} |
         {delay_send,      boolean()} |
         {deliver,         port | term} |
@@ -61,7 +60,6 @@
         {tos,             non_neg_integer()}.
 -type option_name() ::
         active |
-        bit8 |
         buffer |
         delay_send |
         deliver |
@@ -175,7 +173,7 @@ try_connect([], _Port, _Opts, _Timer, _Mod, Err) ->
       Port :: inet:port_number(),
       Options :: [listen_option()],
       ListenSocket :: socket(),
-      Reason :: inet:posix().
+      Reason :: system_limit | inet:posix().
 
 listen(Port, Opts) ->
     Mod = mod(Opts, undefined),
@@ -194,7 +192,7 @@ listen(Port, Opts) ->
 -spec accept(ListenSocket) -> {ok, Socket} | {error, Reason} when
       ListenSocket :: socket(),
       Socket :: socket(),
-      Reason :: closed | timeout | inet:posix().
+      Reason :: closed | timeout | system_limit | inet:posix().
 
 accept(S) ->
     case inet_db:lookup_socket(S) of
@@ -208,7 +206,7 @@ accept(S) ->
       ListenSocket :: socket(),
       Timeout :: timeout(),
       Socket :: socket(),
-      Reason :: closed | timeout | inet:posix().
+      Reason :: closed | timeout | system_limit | inet:posix().
 
 accept(S, Time) when is_port(S) ->
     case inet_db:lookup_socket(S) of

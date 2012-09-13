@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %% 
-%% Copyright Ericsson AB 1999-2011. All Rights Reserved.
+%% Copyright Ericsson AB 1999-2012. All Rights Reserved.
 %% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -28,6 +28,7 @@
 -export([add_community/5, add_community/6, delete_community/1]).
 -export([check_community/1]).
 
+-include("snmpa_internal.hrl").
 -include("SNMP-COMMUNITY-MIB.hrl").
 -include("SNMP-TARGET-MIB.hrl").
 -include("SNMPv2-TC.hrl").
@@ -120,10 +121,17 @@ init_tabs(Comms) ->
 
 read_community_config_files(Dir) ->
     ?vdebug("read community config file",[]),
-    Gen    = fun(_) -> ok end,
-    Filter = fun(Comms) -> Comms end,
-    Check  = fun(Entry) -> check_community(Entry) end,
-    [Comms] = 
+    FileName = "community.conf", 
+    Gen      = fun(D, Reason) -> 
+		       warning_msg("failed reading config file ~s"
+				   "~n   Config Dir: ~s"
+				   "~n   Reason:     ~p", 
+				   [FileName, D, Reason]),
+		       ok 
+	     end,
+    Filter   = fun(Comms) -> Comms end,
+    Check    = fun(Entry) -> check_community(Entry) end,
+    [Comms]  = 
 	snmp_conf:read_files(Dir, [{Gen, Filter, Check, "community.conf"}]),
     Comms.
 
@@ -600,6 +608,9 @@ set_sname(_) -> %% Keep it, if already set.
 
 error(Reason) ->
     throw({error, Reason}).
+
+warning_msg(F, A) ->
+    ?snmpa_warning("[COMMUNITY-MIB]: " ++ F, A).
 
 config_err(F, A) ->
     snmpa_error:config_err("[COMMUNITY-MIB]: " ++ F, A).

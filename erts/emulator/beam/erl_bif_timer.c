@@ -1,7 +1,7 @@
 /*
  * %CopyrightBegin%
  *
- * Copyright Ericsson AB 2005-2011. All Rights Reserved.
+ * Copyright Ericsson AB 2005-2012. All Rights Reserved.
  *
  * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
@@ -324,10 +324,9 @@ bif_timer_timeout(ErtsBifTimer* btm)
 	ASSERT(!erts_get_current_process());
 
 	if (btm->flags & BTM_FLG_BYNAME)
-	    rp = erts_whereis_process(NULL,0,btm->receiver.name,0,ERTS_P2P_FLG_SMP_INC_REFC);
+	    rp = erts_whereis_process(NULL, 0, btm->receiver.name, 0, 0);
 	else {
 	    rp = btm->receiver.proc.ess;
-	    erts_smp_proc_inc_refc(rp);
 	    unlink_proc(btm);
 	}
 
@@ -373,9 +372,12 @@ bif_timer_timeout(ErtsBifTimer* btm)
 		message = TUPLE3(hp, am_timeout, ref, message);
 	    }
 
-	    erts_queue_message(rp, &rp_locks, bp, message, NIL);
+	    erts_queue_message(rp, &rp_locks, bp, message, NIL
+#ifdef USE_VM_PROBES
+			       , NIL
+#endif
+			       );
 	    erts_smp_proc_unlock(rp, rp_locks);
-	    erts_smp_proc_dec_refc(rp);
 	}
     }
 

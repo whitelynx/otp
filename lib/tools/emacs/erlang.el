@@ -1,7 +1,7 @@
 ;; erlang.el --- Major modes for editing and running Erlang
 ;; %CopyrightBegin%
 ;;
-;; Copyright Ericsson AB 1996-2011. All Rights Reserved.
+;; Copyright Ericsson AB 1996-2012. All Rights Reserved.
 ;;
 ;; The contents of this file are subject to the Erlang Public License,
 ;; Version 1.1, (the "License"); you may not use this file except in
@@ -482,10 +482,6 @@ function.")
 (defvar erlang-tab-always-indent t
   "*Non-nil means TAB in Erlang mode should always re-indent the current line,
 regardless of where in the line point is when the TAB command is used.")
-
-(defvar erlang-error-regexp-alist
-  '(("^\\([^:( \t\n]+\\)[:(][ \t]*\\([0-9]+\\)[:) \t]" . (1 2)))
-  "*Patterns for matching Erlang errors.")
 
 (defvar erlang-man-inhibit (eq system-type 'windows-nt)
   "Inhibit the creation of the Erlang Manual Pages menu.
@@ -1327,7 +1323,6 @@ Other commands:
   (erlang-menu-init)
   (erlang-mode-variables)
   (erlang-check-module-name-init)
-  (erlang-add-compilation-alist erlang-error-regexp-alist)
   (erlang-man-init)
   (erlang-tags-init)
   (erlang-font-lock-init)
@@ -1443,31 +1438,6 @@ Other commands:
   (set (make-local-variable 'outline-level) (lambda () 1))
   (set (make-local-variable 'add-log-current-defun-function)
        'erlang-current-defun))
-
-
-;; Compilation.
-;;
-;; The following code is compatible with the standard package `compilation',
-;; making it possible to go to errors using `erlang-next-error' (or just
-;; `next-error' in Emacs 21).
-;;
-;; The normal `compile' command works of course.  For best result, please
-;; execute `make' with the `-w' flag.
-;;
-;; Please see the variables named `compiling-..' above.
-
-(defun erlang-add-compilation-alist (alist)
-  (require 'compile)
-  (cond ((boundp 'compilation-error-regexp-alist) ; Emacs 19
-	 (while alist
-	   (or (assoc (car (car alist)) compilation-error-regexp-alist)
-	       (setq compilation-error-regexp-alist
-		     (cons (car alist) compilation-error-regexp-alist)))
-	   (setq alist (cdr alist))))
-	((boundp 'compilation-error-regexp)
-	 ;; Emacs 18,  Only one regexp is allowed.
-	 (funcall (symbol-function 'set)
-		  'compilation-error-regexp (car (car alist))))))
 
 (defun erlang-font-lock-init ()
   "Initialize Font Lock for Erlang mode."
@@ -1516,7 +1486,7 @@ Other commands:
           ;; A dollar sign right before the double quote that ends a
           ;; string is not a character escape.
           ;;
-          ;; And a "string" has with a double quote not escaped by a
+          ;; And a "string" consists of a double quote not escaped by a
           ;; dollar sign, any number of non-backslash non-newline
           ;; characters or escaped backslashes, a dollar sign
           ;; (otherwise we wouldn't care) and a double quote.  This
@@ -1525,6 +1495,8 @@ Other commands:
           ;; know whether matching started inside a string: limiting
           ;; search to a single line keeps things sane.
           . (("\\(?:^\\|[^$]\\)\"\\(?:[^\"\n]\\|\\\\\"\\)*\\(\\$\\)\"" 1 "w")
+	     ;; Likewise for atoms
+	     ("\\(?:^\\|[^$]\\)'\\(?:[^'\n]\\|\\\\'\\)*\\(\\$\\)'" 1 "w")
              ;; And the dollar sign in $\" escapes two characters, not
              ;; just one.
              ("\\(\\$\\)\\\\\\\"" 1 "'"))))))
@@ -2986,18 +2958,52 @@ This assumes that the preceding expression is either simple
     (forward-sexp (- arg))
     (let ((col (current-column)))
       (skip-chars-backward " \t")
-      ;; Needed to match the colon in "'foo':'bar'".
-      (if (not (memq (preceding-char) '(?# ?:)))
-          col
-        ;; Special hack to handle: (note line break)
-        ;; [#myrecord{
-        ;;  foo = foo}]
-        (or
-         (ignore-errors
-           (backward-char 1)
-           (forward-sexp -1)
-           (current-column))
-         col)))))
+      ;; Special hack to handle: (note line break)
+      ;; [#myrecord{
+      ;;  foo = foo}]
+      ;; where the call (forward-sexp -1) will fail when point is at the `#'.
+      (or
+       (ignore-errors
+	 ;; Needed to match the colon in "'foo':'bar'".
+	 (cond ((eq (preceding-char) ?:)
+		(backward-char 1)
+		(forward-sexp -1)
+		(current-column))
+	       ((eq  (preceding-char) ?#)
+		;; We may now be at:
+		;; - either a construction of a new record
+		;; - or update of a record, in which case we want
+		;;   the column of the expression to be updated.
+		;;
+		;; To see which of the two cases we are at, we first
+		;; move an expression backwards, check for keywords,
+		;; then immediately an expression forwards.  Moving
+		;; backwards skips past tokens like `,' or `->', but
+		;; when moving forwards again, we won't skip past such
+		;; tokens.  We use this: if, after having moved
+		;; forwards, we're back where we started, then it was
+		;; a record update.
+		;; The check for keywords is to detect cases like:
+		;;   case Something of #record_construction{...}
+		(backward-char 1)
+		(let ((record-start (point))
+		      (record-start-col (current-column)))
+		  (forward-sexp -1)
+		  (let ((preceding-expr-col (current-column))
+			;; white space definition according to erl_scan
+			(white-space "\000-\040\200-\240"))
+		    (if (erlang-at-keyword)
+			;; The (forward-sexp -1) call moved past a keyword
+			(1+ record-start-col)
+		      (forward-sexp 1)
+		      (skip-chars-forward white-space record-start)
+		      ;; Are we back where we started?  If so, it was an update.
+		      (if (= (point) record-start)
+			    preceding-expr-col
+			(goto-char record-start)
+			(1+ (current-column)))))))
+	       (t col)))
+       col))))
 
 (defun erlang-indent-parenthesis (stack-position) 
   (let ((previous (erlang-indent-find-preceding-expr)))
@@ -4860,7 +4866,6 @@ The following special commands are available:
     (set (make-local-variable 'compilation-old-error-list) nil))
   ;; Needed when compiling directly from the Erlang shell.
   (setq compilation-last-buffer (current-buffer))
-  (erlang-add-compilation-alist erlang-error-regexp-alist)
   (setq comint-prompt-regexp "^[^>=]*> *")
   (setq comint-eol-on-send t)
   (setq comint-input-ignoredups t)

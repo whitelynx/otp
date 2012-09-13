@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 1996-2011. All Rights Reserved.
+%% Copyright Ericsson AB 1996-2012. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -74,6 +74,7 @@
 -export([bad_table/1, types/1]).
 -export([otp_9932/1]).
 -export([otp_9423/1]).
+-export([otp_10182/1]).
 
 -export([init_per_testcase/2, end_per_testcase/2]).
 %% Convenience for manual testing
@@ -146,6 +147,7 @@ all() ->
      exit_many_large_table_owner, exit_many_tables_owner,
      exit_many_many_tables_owner, write_concurrency, heir,
      give_away, setopts, bad_table, types,
+     otp_10182,
      otp_9932,
      otp_9423].
 
@@ -715,30 +717,17 @@ adjust_xmem([T1,T2,T3,T4], {A0,B0,C0,D0} = _Mem0) ->
     TabDiff = ?TAB_STRUCT_SZ,
     Mem1 = {A0+TabDiff, B0+TabDiff, C0+TabDiff, D0+TabDiff},
 
-    Mem2 = case {erlang:system_info({wordsize,internal}),erlang:system_info({wordsize,external})} of
-	         %% Halfword, corrections for regular pointers occupying two internal words.
-		 {4,8} ->
-			{A1,B1,C1,D1} = Mem1,
-			{A1+4*ets:info(T1, size)+?DB_TREE_STACK_NEED,
-			 B1+3*ets:info(T2, size)+?DB_HASH_SIZEOF_EXTSEG,
-			 C1+3*ets:info(T3, size)+?DB_HASH_SIZEOF_EXTSEG,
-			 D1+3*ets:info(T4, size)+?DB_HASH_SIZEOF_EXTSEG};
-		 _ ->
-			Mem1
-		end,
-
-    %% Adjust for hybrid and shared heaps:
-    %%   Each record is one word smaller.
-    %%Mem2 = case erlang:system_info(heap_type) of
-    %%    	   private ->
-    %%    	       Mem1;
-    %%    	   _ ->
-    %%    	       {A1,B1,C1,D1} = Mem1,
-    %%    	       {A1-ets:info(T1, size),B1-ets:info(T2, size),
-    %%    		C1-ets:info(T3, size),D1-ets:info(T4, size)}
-    %%          end,
-    %%{Mem2,{ets:info(T1,stats),ets:info(T2,stats),ets:info(T3,stats),ets:info(T4,stats)}}.
-    Mem2.
+    case {erlang:system_info({wordsize,internal}),erlang:system_info({wordsize,external})} of
+	%% Halfword, corrections for regular pointers occupying two internal words.
+	{4,8} ->
+	    {A1,B1,C1,D1} = Mem1,
+	    {A1+4*ets:info(T1, size)+?DB_TREE_STACK_NEED,
+	     B1+3*ets:info(T2, size)+?DB_HASH_SIZEOF_EXTSEG,
+	     C1+3*ets:info(T3, size)+?DB_HASH_SIZEOF_EXTSEG,
+	     D1+3*ets:info(T4, size)+?DB_HASH_SIZEOF_EXTSEG};
+	_ ->
+	    Mem1
+    end.
 
 t_whitebox(doc) ->
     ["Diverse whitebox testes"];
@@ -1037,6 +1026,8 @@ t_test_ms(Config) when is_list(Config) ->
 				   [{{'$1','$2'},[{'<','$1','$2'}],['$$']}]),
     ?line {ok,false} = ets:test_ms({a,b},
 				   [{{'$1','$2'},[{'>','$1','$2'}],['$$']}]),
+    Tpl = {a,gb_sets:new()},
+    ?line {ok,Tpl} = ets:test_ms(Tpl, [{{'_','_'},  [], ['$_']}]), % OTP-10190
     ?line {error,[{error,String}]} = ets:test_ms({a,b},
 						 [{{'$1','$2'},
 						   [{'flurp','$1','$2'}],
@@ -4217,21 +4208,13 @@ heavy_lookup_element(Config) when is_list(Config) ->
     repeat_for_opts(heavy_lookup_element_do).
 
 heavy_lookup_element_do(Opts) ->
-    ?line EtsMem = etsmem(),
-    ?line Tab = ets_new(foobar_table, [set, protected, {keypos, 2} | Opts]),
-    ?line ok = fill_tab2(Tab, 0, 7000),
-    case os:type() of
-	vxworks ->
-	    ?line ?t:do_times(5, ?MODULE, do_lookup_element,
-				       [Tab, 6999, 1]);
-						% lookup ALL elements 5 times.
-	_ ->
-	    ?line ?t:do_times(50, ?MODULE, do_lookup_element,
-				       [Tab, 6999, 1])
-						% lookup ALL elements 50 times.
-    end,
-    ?line true = ets:delete(Tab),
-    ?line verify_etsmem(EtsMem).
+    EtsMem = etsmem(),
+    Tab = ets_new(foobar_table, [set, protected, {keypos, 2} | Opts]),
+    ok = fill_tab2(Tab, 0, 7000),
+    % lookup ALL elements 50 times
+    ?t:do_times(50, ?MODULE, do_lookup_element, [Tab, 6999, 1]),
+    true = ets:delete(Tab),
+    verify_etsmem(EtsMem).
 
 do_lookup_element(_Tab, 0, _) -> ok;
 do_lookup_element(Tab, N, M) ->
@@ -5483,6 +5466,20 @@ otp_9423(Config) when is_list(Config) ->
 	Skipped -> Skipped
     end.
 	    
+
+%% Corrupted binary in compressed table
+otp_10182(Config) when is_list(Config) ->
+    Bin = <<"aHR0cDovL2hvb3RzdWl0ZS5jb20vYy9wcm8tYWRyb2xsLWFi">>,
+    Key = {test, Bin},
+    Value = base64:decode(Bin),
+    In = {Key,Value},
+    Db = ets:new(undefined, [set, protected, {read_concurrency, true}, compressed]),
+    ets:insert(Db, In),
+    [Out] = ets:lookup(Db, Key),
+    io:format("In :  ~p\nOut: ~p\n", [In,Out]),
+    ets:delete(Db),
+    In = Out.
+
     
     
 

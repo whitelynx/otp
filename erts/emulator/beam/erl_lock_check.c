@@ -1,7 +1,7 @@
 /*
  * %CopyrightBegin%
  *
- * Copyright Ericsson AB 2005-2011. All Rights Reserved.
+ * Copyright Ericsson AB 2005-2012. All Rights Reserved.
  *
  * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
@@ -82,7 +82,6 @@ static erts_lc_lock_order_t erts_lock_order[] = {
 #ifdef ERTS_SMP
     {	"bif_timers",				NULL			},
     {	"reg_tab",				NULL			},
-    {	"migration_info_update",		NULL			},
     {	"proc_main",				"pid"			},
     {   "old_code",                             "address"               },
 #ifdef HIPE
@@ -126,6 +125,7 @@ static erts_lc_lock_order_t erts_lock_order[] = {
     {   "removed_fd_pre_alloc_lock",            "address"               },
     {   "state_prealloc",                       NULL                    },
     {	"schdlr_sspnd",				NULL			},
+    {	"migration_info_update",		NULL			},
     {	"run_queue",				"address"		},
     {	"cpu_info",				NULL			},
     {	"pollset",				"address"		},
@@ -177,13 +177,13 @@ static erts_lc_lock_order_t erts_lock_order[] = {
     {	"sched_stat",				NULL			},
 #endif
     {	"async_init_mtx",			NULL			},
-#ifdef ERTS_SMP
-    {	"proc_lck_qs_alloc",			NULL 			},
-#endif
 #ifdef __WIN32__
 #ifdef DEBUG
     {   "save_ops_lock",                        NULL                    },
 #endif
+#endif
+#ifdef	USE_VM_PROBES
+    {   "efile_drv dtrace mutex",               NULL                    },
 #endif
     {	"mtrace_buf",				NULL			},
     {	"erts_alloc_hard_debug",		NULL			}

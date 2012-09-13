@@ -4,9 +4,14 @@ BEGIN
 -- Single Value
 SingleValue ::= INTEGER (1)
 SingleValue2 ::= INTEGER (1..20)
+predefined INTEGER ::= 1
+SingleValue3 ::= INTEGER (predefined | 5 | 10)
 Range2to19 ::= INTEGER (1<..<20)
 Range10to20 ::= INTEGER (10..20)
 ContainedSubtype ::= INTEGER (INCLUDES Range10to20)
+-- Some ranges for additional constrained number testing.
+LongLong ::= INTEGER (0..18446744073709551615)
+Range256to65536 ::= INTEGER (256..65536)
 FixedSize ::= OCTET STRING (SIZE(10)) 
 FixedSize2 ::= OCTET STRING (SIZE(10|20)) 
 VariableSize ::= OCTET STRING (SIZE(1..10)) 
@@ -51,6 +56,7 @@ Thing ::= INTEGER {fred (0),fred2 (1),fred3 (2)}
 AnotherThing ::= Thing (fred | fred2)
 
 I ::= INTEGER (0|15..269) -- OTP-5457
+X1 ::= INTEGER (1..4 | 8 | 10 | 20) -- OTP-9946
 
 -- OTP-5511
 
