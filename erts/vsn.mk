@@ -1,7 +1,7 @@
 # 
 # %CopyrightBegin%
 #
-# Copyright Ericsson AB 1997-2012. All Rights Reserved.
+# Copyright Ericsson AB 1997-2013. All Rights Reserved.
 #
 # The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
@@ -17,8 +17,8 @@
 # %CopyrightEnd%
 # 
 
-VSN = 5.10
-SYSTEM_VSN = R16B
+VSN = 5.11
+SYSTEM_VSN = R17A
 
 # Port number 4365 in 4.2
 # Port number 4366 in 4.3

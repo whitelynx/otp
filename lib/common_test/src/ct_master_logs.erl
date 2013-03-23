@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2006-2012. All Rights Reserved.
+%% Copyright Ericsson AB 2006-2013. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -133,8 +133,8 @@ init(Parent,LogDir,Nodes) ->
 				end,Nodes)),
 
     io:format(CtLogFd,int_header(),[log_timestamp(now()),"Test Nodes\n"]),
-    io:format(CtLogFd,"~s\n",[NodeStr]),
-    io:format(CtLogFd,int_footer()++"\n",[]),
+    io:format(CtLogFd,"~ts\n",[NodeStr]),
+    io:put_chars(CtLogFd,[int_footer(),"\n"]),
 
     NodeDirIxFd = open_nodedir_index(RunDirAbs,Time),
     Parent ! {started,self(),{Time,RunDirAbs}},
@@ -201,25 +201,22 @@ loop(State) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%
 open_ct_master_log(Dir) ->
     FullName = filename:join(Dir,?ct_master_log_name),
-    {ok,Fd} = file:open(FullName,[write]),
-    io:format(Fd,header("Common Test Master Log", {[],[1,2],[]}),[]),
+    {ok,Fd} = file:open(FullName,[write,{encoding,utf8}]),
+    io:put_chars(Fd,header("Common Test Master Log", {[],[1,2],[]})),
     %% maybe add config info here later
-    io:format(Fd, config_table([]), []),
-    io:format(Fd,
-	      "<style>\n"
-	      "div.ct_internal { background:lightgrey; color:black }\n"
-	      "div.default     { background:lightgreen; color:black }\n"
-	      "</style>\n",
-	      []),
-    io:format(Fd, 
-	      xhtml("<br><h2>Progress Log</h2>\n<pre>\n",
-		    "<br /><h2>Progress Log</h2>\n<pre>\n"),
-	      []),
+    io:put_chars(Fd,config_table([])),
+    io:put_chars(Fd,
+		 "<style>\n"
+		 "div.ct_internal { background:lightgrey; color:black }\n"
+		 "div.default     { background:lightgreen; color:black }\n"
+		 "</style>\n"),
+    io:put_chars(Fd, 
+		 xhtml("<br><h2>Progress Log</h2>\n<pre>\n",
+		       "<br /><h2>Progress Log</h2>\n<pre>\n")),
     Fd.
 
 close_ct_master_log(Fd) ->
-    io:format(Fd,"</pre>",[]),
-    io:format(Fd,footer(),[]),
+    io:put_chars(Fd,["</pre>",footer()]),
     file:close(Fd).
 
 config_table(Vars) ->
@@ -238,7 +235,7 @@ config_table1([]) ->
     ["</tbody>\n</table>\n"].
 
 int_header() ->
-    "<div class=\"ct_internal\"><b>*** CT MASTER ~s *** ~s</b>".
+    "<div class=\"ct_internal\"><b>*** CT MASTER ~s *** ~ts</b>".
 int_footer() ->
     "</div>".
 
@@ -247,21 +244,22 @@ int_footer() ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 open_nodedir_index(Dir,StartTime) ->
     FullName = filename:join(Dir,?nodedir_index_name),
-    {ok,Fd} = file:open(FullName,[write]),
-    io:format(Fd,nodedir_index_header(StartTime),[]),
+    {ok,Fd} = file:open(FullName,[write,{encoding,utf8}]),
+    io:put_chars(Fd,nodedir_index_header(StartTime)),
     Fd.
 
 print_nodedir(Node,RunDir,Fd) ->
     Index = filename:join(RunDir,"index.html"),
-    io:format(Fd,
-	      ["<tr>\n"
-	       "<td align=center>",atom_to_list(Node),"</td>\n",
-	       "<td align=left><a href=\"",Index,"\">",Index,"</a></td>\n",
-	       "</tr>\n"],[]),
+    io:put_chars(Fd,
+		 ["<tr>\n"
+		  "<td align=center>",atom_to_list(Node),"</td>\n",
+		  "<td align=left><a href=\"",ct_logs:uri(Index),"\">",Index,
+		  "</a></td>\n",
+		  "</tr>\n"]),
     ok.
 
 close_nodedir_index(Fd) ->
-    io:format(Fd,index_footer(),[]),
+    io:put_chars(Fd,index_footer()),
     file:close(Fd).
 
 nodedir_index_header(StartTime) ->
@@ -286,7 +284,9 @@ make_all_runs_index(LogDir) ->
     DirsSorted = (catch sort_all_runs(Dirs)),
     Header = all_runs_header(),
     Index = [runentry(Dir) || Dir <- DirsSorted],
-    Result = file:write_file(FullName,Header++Index++index_footer()),
+    Result = file:write_file(FullName,
+			     unicode:characters_to_binary(
+			       Header++Index++index_footer())),
     Result.    
 
 sort_all_runs(Dirs) ->
@@ -326,7 +326,8 @@ runentry(Dir) ->
 	end,
     Index = filename:join(Dir,?nodedir_index_name),
     ["<tr>\n"
-     "<td align=center><a href=\"",Index,"\">",timestamp(Dir),"</a></td>\n",
+     "<td align=center><a href=\"",ct_logs:uri(Index),"\">",
+     timestamp(Dir),"</a></td>\n",
      "<td align=center>",MasterStr,"</td>\n",
      "<td align=center>",NodesStr,"</td>\n",
      "</tr>\n"].
@@ -384,8 +385,10 @@ header(Title, TableCols) ->
      "<head>\n",
      "<title>" ++ Title ++ "</title>\n",
      "<meta http-equiv=\"cache-control\" content=\"no-cache\">\n",
+     "<meta http-equiv=\"content-type\" content=\"text/html; charset=utf-8\">\n",
      xhtml("",
-	   ["<link rel=\"stylesheet\" href=\"",CSSFile,"\" type=\"text/css\">"]),
+	   ["<link rel=\"stylesheet\" href=\"",ct_logs:uri(CSSFile),
+	    "\" type=\"text/css\">"]),
      xhtml("",
 	   ["<script type=\"text/javascript\" src=\"",JQueryFile,
 	    "\"></script>\n"]),

@@ -1,7 +1,7 @@
 #
 # %CopyrightBegin%
 #
-# Copyright Ericsson AB 2012. All Rights Reserved.
+# Copyright Ericsson AB 2012-2013. All Rights Reserved.
 #
 # The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
@@ -59,7 +59,7 @@ APP_TARGET = $(EBIN)/$(APP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_COMPILE_FLAGS += -I../include -I../ebin
+ERL_COMPILE_FLAGS += -I../include -I../ebin -Werror
 
 # ----------------------------------------------------
 # Targets
@@ -75,10 +75,10 @@ clean:
 	rm -f errs core *~
 
 $(APP_TARGET): $(APP_SRC) ../vsn.mk
-	sed -e 's;%VSN%;$(ELDAP_VSN);' $< > $@
+	$(vsn_verbose)sed -e 's;%VSN%;$(ELDAP_VSN);' $< > $@
 
 $(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
-	sed -e 's;%VSN%;$(ELDAP_VSN);' $< > $@
+	$(vsn_verbose)sed -e 's;%VSN%;$(ELDAP_VSN);' $< > $@
 
 docs:
 
@@ -88,7 +88,7 @@ $(TARGET_FILES): $(HRL_FILES)
 # Special Build Targets
 # ----------------------------------------------------
 $(ASN1_HRL): ../asn1/$(ASN1_FILES)
-	$(ERLC) -o $(EBIN) -bber_bin +optimize +nif $(ERL_COMPILE_FLAGS) ../asn1/ELDAPv3.asn1
+	$(asn_verbose)$(ERLC) -o $(EBIN) -bber $(ERL_COMPILE_FLAGS) ../asn1/ELDAPv3.asn1
 
 # ----------------------------------------------------
 # Release Target

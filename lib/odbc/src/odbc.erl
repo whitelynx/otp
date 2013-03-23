@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 1999-2012. All Rights Reserved.
+%% Copyright Ericsson AB 1999-2013. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -810,10 +810,11 @@ connect(ConnectionReferense, ConnectionStr, Options) ->
     {C_TupleRow, _} = 
 	connection_config(tuple_row, Options),
     {BinaryStrings, _} = connection_config(binary_strings, Options),
+    {ExtendedErrors, _} = connection_config(extended_errors, Options),
 
     ODBCCmd = 
 	[?OPEN_CONNECTION, C_AutoCommitMode, C_TraceDriver, 
-	 C_SrollableCursors, C_TupleRow, BinaryStrings, ConnectionStr],
+	 C_SrollableCursors, C_TupleRow, BinaryStrings, ExtendedErrors, ConnectionStr],
     
     %% Send request, to open a database connection, to the control process.
     case call(ConnectionReferense, 
@@ -860,6 +861,8 @@ connection_default(trace_driver) ->
 connection_default(scrollable_cursors) ->
     {?ON, on};
 connection_default(binary_strings) ->
+    {?OFF, off};
+connection_default(extended_errors) ->
     {?OFF, off}.
 
 %%-------------------------------------------------------------------------
@@ -899,7 +902,9 @@ param_values(Params) ->
 	[{_, Values} | _] -> 
 	    Values;
 	[{_, _, Values} | _] -> 
-	    Values
+	    Values;
+	[] -> 
+	    []
     end.
 
 %%-------------------------------------------------------------------------

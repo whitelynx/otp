@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2010-2012. All Rights Reserved.
+%% Copyright Ericsson AB 2010-2013. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -33,6 +33,7 @@
 -export([reg/1,
          incr/1,
          read/1,
+         sum/1,
          flush/1]).
 
 -define(stat, diameter_stats).
@@ -53,6 +54,7 @@ tc() ->
     [reg,
      incr,
      read,
+     sum,
      flush].
 
 init_per_suite(Config) ->
@@ -69,7 +71,7 @@ reg(_) ->
     true = ?stat:reg(Ref),
     false = ?stat:reg(Ref).  %% duplicate
 
-incr(_) ->    
+incr(_) ->
     Ref = '_',
     Ctr = x,
     false = ?stat:incr(Ctr),      %% not registered,
@@ -97,6 +99,23 @@ read(_) ->
     [] = ?stat:read([]),
     [] = ?stat:read([make_ref()]),
     ?stat:flush([self(), Ref, make_ref()]).
+
+sum(_) ->
+    Ref = make_ref(),
+    C1 = {a,b},
+    C2 = {b,a},
+    true = ?stat:reg(Ref),
+    1 = ?stat:incr(C1),
+    1 = ?stat:incr(C2),
+    2 = ?stat:incr(C2),
+    7 = ?stat:incr(C1, Ref, 7),
+    [{Ref,  [{C1,8}, {C2,2}]}]
+        = ?stat:sum([Ref, make_ref()]),
+    Self = self(),
+    [{Self,  [{C1,1}, {C2,2}]}]
+        = ?stat:sum([self()]),
+    [{Ref, [{C1,7}]}, {Self, [{C1,1}, {C2,2}]}]
+        = lists:sort(?stat:flush([self(), Ref])).
 
 flush(_) ->
     Ref = make_ref(),

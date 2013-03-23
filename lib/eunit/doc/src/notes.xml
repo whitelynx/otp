@@ -5,7 +5,7 @@
   <header>
     <copyright>
       <year>2008</year>
-      <year>2011</year>
+      <year>2013</year>
       <holder>Ericsson AB, All Rights Reserved</holder>
     </copyright>
     <legalnotice>
@@ -31,6 +31,23 @@
     <file>notes.xml</file>
   </header>
   <p>This document describes the changes made to the EUnit application.</p>
+
+<section><title>Eunit 2.2.4</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+	    <p>Where necessary a comment stating encoding has been
+	    added to Erlang files. The comment is meant to be removed
+	    in Erlang/OTP R17B when UTF-8 becomes the default
+	    encoding. </p>
+          <p>
+	    Own Id: OTP-10630</p>
+        </item>
+      </list>
+    </section>
+
+</section>
 
 <section><title>Eunit 2.2.3</title>
 

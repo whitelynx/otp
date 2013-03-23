@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2010-2012. All Rights Reserved.
+%% Copyright Ericsson AB 2010-2013. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -188,8 +188,6 @@ i({connect, Pid, Opts, Addrs, Ref}) ->
     #transport{parent = Pid,
                mode = {connect, connect(Sock, RAs, RP, [])},
                socket = Sock};
-i({connect, _, _, _} = T) ->  %% from old code
-    x(T);
 
 %% An accepting transport spawned by diameter.
 i({accept, Pid, LPid, Sock, Ref})
@@ -201,8 +199,6 @@ i({accept, Pid, LPid, Sock, Ref})
     #transport{parent = Pid,
                mode = {accept, LPid},
                socket = Sock};
-i({accept, _, _, _} = T) ->  %% from old code
-    x(T);
 
 %% An accepting transport spawned at association establishment.
 i({accept, Ref, LPid, Sock, Id}) ->
@@ -293,7 +289,7 @@ ports() ->
     Ts = diameter_reg:match({?MODULE, '_', '_'}),
     [{type(T), N, Pid} || {{?MODULE, T, {_, {_, S}}}, Pid} <- Ts,
                           {ok, N} <- [inet:port(S)]].
-    
+
 ports(Ref) ->
     Ts = diameter_reg:match({?MODULE, '_', {Ref, '_'}}),
     [{type(T), N, Pid} || {{?MODULE, T, {R, {_, S}}}, Pid} <- Ts,
@@ -488,8 +484,8 @@ transition({diameter, {close, Pid}}, #transport{parent = Pid}) ->
 %% TLS over SCTP is described in RFC 3436 but has limitations as
 %% described in RFC 6083. The latter describes DTLS over SCTP, which
 %% addresses these limitations, DTLS itself being described in RFC
-%% 4347. TLS is primarily used over TCP, which the current RFC 3588
-%% draft acknowledges by equating TLS with TLS/TCP and DTLS/SCTP.
+%% 4347. TLS is primarily used over TCP, which RFC 6733 acknowledges
+%% by equating TLS with TLS/TCP and DTLS/SCTP.
 transition({diameter, {tls, _Ref, _Type, _Bool}}, _) ->
     stop;
 
@@ -589,8 +585,7 @@ recv({_, #sctp_assoc_change{state = comm_up,
                 socket = Sock}
      = S) ->
     Ref = getr(?REF_KEY),
-    is_reference(Ref)  %% started in new code
-        andalso publish(T, Ref, Id, Sock),
+    publish(T, Ref, Id, Sock),
     up(S#transport{assoc_id = Id,
                    streams = {IS, OS}});
 

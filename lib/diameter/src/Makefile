@@ -1,7 +1,7 @@
 # 
 # %CopyrightBegin%
 # 
-# Copyright Ericsson AB 2010-2012. All Rights Reserved.
+# Copyright Ericsson AB 2010-2013. All Rights Reserved.
 # 
 # The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
@@ -16,13 +16,8 @@
 # 
 # %CopyrightEnd%
 
-ifeq ($(ERL_TOP),)
-include $(DIAMETER_TOP)/make/target.mk
-include $(DIAMETER_TOP)/make/$(TARGET)/rules.mk
-else
 include $(ERL_TOP)/make/target.mk
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
-endif
 
 # ----------------------------------------------------
 # Application version
@@ -109,12 +104,13 @@ endif
 
 ERL_COMPILE_FLAGS += \
 	+'{parse_transform,sys_pre_attributes}' \
-	+'{attribute,insert,app_vsn,$(APP_VSN)}' \
+	+'{attribute,insert,app_vsn,"$(APP_VSN)"}' \
 	+warn_export_vars \
 	+warn_unused_vars \
 	-pa $(ABS_EBIN) \
 	-I $(INCDIR) \
-	-I gen
+	-I gen \
+	$(STRICT_FLAGS)
 # -pa is to be able to include_lib from the include directory: the
 # path must contain the application name.
 
@@ -124,25 +120,44 @@ ERL_COMPILE_FLAGS += \
 
 # erl/hrl from dictionary file.
 gen/diameter_gen_%.erl gen/diameter_gen_%.hrl: dict/%.dia
+	$(dia_verbose) \
 	../bin/diameterc -o gen -i $(EBIN) $<
 
 opt: $(TARGET_FILES)
+
+# Compile with -Werror during development. Don't do this in the 'opt'
+# target so that new warnings don't break the build. It's also
+# convenient to have both targets when weeding out warnings isn't the
+# priority. (Or when they're intentional, when debugging.)
+strict:
+	$(MAKE) opt STRICT_FLAGS=-Werror
+
+# Build unofficial patches with some degree of traceability. Refuse to
+# build if there are diffs from HEAD since that defeats the purpose.
+patch:
+	git diff --exit-code HEAD
+	$(MAKE) opt PRE_VSN="-$(shell git rev-list --max-count=1 HEAD | cut -c 1-8)"
 
 debug:
 	@$(MAKE) TYPE=debug opt
 
 # The dictionary parser.
 gen/$(DICT_YRL).erl: compiler/$(DICT_YRL).yrl
+	$(yecc_verbose) \
 	$(ERLC) -Werror -o $(@D) $<
 
 # Generate the app file.
 $(APP_TARGET): $(APP_SRC) ../vsn.mk modules.mk
+	$(gen_verbose) \
 	M=`echo $(notdir $(APP_MODULES)) | tr ' ' ,`; \
+	R=`echo $(REGISTERED) | tr ' ' ,`; \
 	sed -e 's;%VSN%;$(VSN);' \
 	    -e "s;%MODULES%;$$M;" \
+	    -e "s;%REGISTERED%;$$R;" \
 	  $< > $@
 
 $(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
+	$(vsn_verbose) \
 	sed -e 's;%VSN%;$(VSN);' $< > $@
 
 app:  $(APP_TARGET) $(APPUP_TARGET)
@@ -210,11 +225,7 @@ dialyze: opt $(PLT)
 # Release targets
 # ----------------------------------------------------
 
-ifeq ($(ERL_TOP),)
-include $(DIAMETER_TOP)/make/release_targets.mk
-else
 include $(ERL_TOP)/make/otp_release_targets.mk
-endif
 
 # Can't $(INSTALL_DIR) more than one directory at a time on Solaris.
 
@@ -248,11 +259,15 @@ release_docs_spec:
 # Dependencies
 # ----------------------------------------------------
 
-gen/diameter_gen_base_accounting.erl gen/diameter_gen_relay.erl \
-gen/diameter_gen_base_accounting.hrl gen/diameter_gen_relay.hrl: \
+gen/diameter_gen_base_accounting.erl gen/diameter_gen_base_accounting.hrl: \
 	$(EBIN)/diameter_gen_base_rfc3588.$(EMULATOR)
 
-gen/diameter_gen_base_rfc3588.erl gen/diameter_gen_base_rfc3588.hrl: \
+gen/diameter_gen_acct_rfc6733.erl gen/diameter_gen_acct_rfc6733.hrl: \
+	$(EBIN)/diameter_gen_base_rfc6733.$(EMULATOR)
+
+gen/diameter_gen_relay.erl gen/diameter_gen_relay.hrl \
+gen/diameter_gen_base_rfc3588.erl gen/diameter_gen_base_rfc3588.hrl \
+gen/diameter_gen_base_rfc6733.erl gen/diameter_gen_base_rfc6733.hrl: \
 	$(COMPILER_MODULES:%=$(EBIN)/%.$(EMULATOR))
 
 $(DICT_MODULES:gen/%=$(EBIN)/%.$(EMULATOR)): \
@@ -274,7 +289,7 @@ depend.mk: depend.sed $(MODULES:%=%.erl) Makefile
 .PHONY: debug opt release_docs_spec release_spec
 .PHONY: $(TARGET_DIRS:%/=%) $(TARGET_DIRS:%/=release_src_%)
 .PHONY: $(EXAMPLE_DIRS:%/=release_examples_%)
-.PHONY: plt dialyze
+.PHONY: plt dialyze patch strict
 
 # Keep intermediate files.
 .SECONDARY: $(DICT_ERLS) $(DICT_HRLS) gen/$(DICT_YRL:%=%.erl)

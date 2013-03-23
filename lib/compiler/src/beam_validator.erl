@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2004-2012. All Rights Reserved.
+%% Copyright Ericsson AB 2004-2013. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -62,7 +62,7 @@ files([F|Fs]) ->
     case file(F) of
 	ok -> ok;
 	{error,Es} -> 
-	    io:format("~p:~n~s~n", [F,format_error(Es)])
+	    io:format("~tp:~n~ts~n", [F,format_error(Es)])
     end,
     files(Fs);
 files([]) -> ok.
@@ -649,7 +649,8 @@ valfun_4(send, Vst) ->
     call(send, 2, Vst);
 valfun_4({set_tuple_element,Src,Tuple,I}, Vst) ->
     assert_term(Src, Vst),
-    assert_type({tuple_element,I+1}, Tuple, Vst);
+    assert_type({tuple_element,I+1}, Tuple, Vst),
+    Vst;
 %% Match instructions.
 valfun_4({select_val,Src,{f,Fail},{list,Choices}}, Vst) ->
     assert_term(Src, Vst),
@@ -1044,7 +1045,7 @@ float_op(Src, Dst, Vst0) ->
 
 assert_fls(Fls, Vst) ->
     case get_fls(Vst) of
-	Fls -> Vst;
+	Fls -> ok;
 	OtherFls -> error({bad_floating_point_state,OtherFls})
     end.
 
@@ -1120,7 +1121,7 @@ bsm_match_state(Slots) ->
     {match_context,0,Slots}.
 
 bsm_validate_context(Reg, Vst) ->
-    bsm_get_context(Reg, Vst),
+    _ = bsm_get_context(Reg, Vst),
     ok.
 
 bsm_get_context({x,X}=Reg, #vst{current=#st{x=Xs}}=_Vst) when is_integer(X) ->
@@ -1133,7 +1134,7 @@ bsm_get_context(Reg, _) -> error({bad_source,Reg}).
 bsm_save(Reg, {atom,start}, Vst) ->
     %% Save point refering to where the match started.
     %% It is always valid. But don't forget to validate the context register.
-    bsm_get_context(Reg, Vst),
+    bsm_validate_context(Reg, Vst),
     Vst;
 bsm_save(Reg, SavePoint, Vst) ->
     case bsm_get_context(Reg, Vst) of
@@ -1146,7 +1147,7 @@ bsm_save(Reg, SavePoint, Vst) ->
 bsm_restore(Reg, {atom,start}, Vst) ->
     %% (Mostly) automatic save point refering to where the match started.
     %% It is always valid. But don't forget to validate the context register.
-    bsm_get_context(Reg, Vst),
+    bsm_validate_context(Reg, Vst),
     Vst;
 bsm_restore(Reg, SavePoint, Vst) ->
     case bsm_get_context(Reg, Vst) of
@@ -1312,8 +1313,7 @@ assert_term(Src, Vst) ->
 %%
 
 assert_type(WantedType, Term, Vst) ->
-    assert_type(WantedType, get_term_type(Term, Vst)),
-    Vst.
+    assert_type(WantedType, get_term_type(Term, Vst)).
 
 assert_type(Correct, Correct) -> ok;
 assert_type(float, {float,_}) -> ok;

@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 1996-2012. All Rights Reserved.
+%% Copyright Ericsson AB 1996-2013. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -88,7 +88,8 @@
 %% Not documented, or not ready for publication.
 -export([lookup_keys/2]).
 
--export_type([tab_name/0]).
+-export_type([bindings_cont/0, cont/0, object_cont/0, select_cont/0,
+              tab_name/0]).
 
 -compile({inline, [{einval,2},{badarg,2},{undefined,1},
                    {badarg_exit,2},{lookup_reply,2}]}).
@@ -2503,7 +2504,7 @@ fopen2(Fname, Tab) ->
                  end,
             case Do of
 		{repair, Mess} ->
-                    io:format(user, "dets: file ~p~s~n", [Fname, Mess]),
+                    io:format(user, "dets: file ~tp~s~n", [Fname, Mess]),
                     Version = default,
                     case fsck(Fd, Tab, Fname, FH, default, default, Version) of
                         ok ->
@@ -2598,7 +2599,7 @@ fopen_existing_file(Tab, OpenArgs) ->
 	_ when FH#fileheader.keypos =/= Kp ->
 	    throw({error, {keypos_mismatch, Fname}});
 	{compact, SourceHead} ->
-	    io:format(user, "dets: file ~p is now compacted ...~n", [Fname]),
+	    io:format(user, "dets: file ~tp is now compacted ...~n", [Fname]),
 	    {ok, NewSourceHead} = open_final(SourceHead, Fname, read, false,
 					     ?DEFAULT_CACHE, Tab, Debug),
 	    case catch compact(NewSourceHead) of
@@ -2608,14 +2609,14 @@ fopen_existing_file(Tab, OpenArgs) ->
 		_Err ->
                     _ = file:close(Fd),
                     dets_utils:stop_disk_map(),
-		    io:format(user, "dets: compaction of file ~p failed, "
+		    io:format(user, "dets: compaction of file ~tp failed, "
 			      "now repairing ...~n", [Fname]),
                     {ok, Fd2, _FH} = read_file_header(Fname, Acc, Ram),
                     do_repair(Fd2, Tab, Fname, FH, MinSlots, MaxSlots, 
 			      Version, OpenArgs)
 	    end;
 	{repair, Mess} ->
-	    io:format(user, "dets: file ~p~s~n", [Fname, Mess]),
+	    io:format(user, "dets: file ~tp~s~n", [Fname, Mess]),
             do_repair(Fd, Tab, Fname, FH, MinSlots, MaxSlots, 
 		      Version, OpenArgs);
 	_ when FH#fileheader.version =/= Version, Version =/= default ->
@@ -2836,14 +2837,18 @@ fsck_try(Fd, Tab, FH, Fname, SlotNumbers, Version) ->
 
 tempfile(Fname) ->
     Tmp = lists:concat([Fname, ".TMP"]),
+    tempfile(Tmp, 10).
+
+tempfile(Tmp, 0) ->
+    Tmp;
+tempfile(Tmp, N) ->
     case file:delete(Tmp) of
         {error, eacces} -> % 'dets_process_died' happened anyway... (W-nd-ws)
-            timer:sleep(5000),
-            file:delete(Tmp);
+            timer:sleep(1000),
+            tempfile(Tmp, N-1);
         _ ->
-            ok
-    end,
-    Tmp.
+            Tmp
+    end.
 
 %% -> {ok, NewHead} | {try_again, integer()} | Error
 fsck_try_est(Head, Fd, Fname, SlotNumbers, FH) ->

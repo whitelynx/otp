@@ -1,7 +1,7 @@
 %%----------------------------------------------------------------------
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2012. All Rights Reserved.
+%% Copyright Ericsson AB 2012-2013. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -307,7 +307,7 @@
 -type option() :: {ssh,host()} | {port,inet:port_number()} | {user,string()} |
 		  {password,string()} | {user_dir,string()} |
 		  {timeout,timeout()}.
--type host() :: inet:host_name() | inet:ip_address().
+-type host() :: inet:hostname() | inet:ip_address().
 
 -type notification() :: {notification, xml_attributes(), notification_content()}.
 -type notification_content() :: [event_time()|simple_xml()].
@@ -968,7 +968,7 @@ close_session(Client) ->
 %% @end
 %%----------------------------------------------------------------------
 close_session(Client, Timeout) ->
-    call(Client,{send_rpc_op, close_session, [], Timeout}).
+    call(Client,{send_rpc_op, close_session, [], Timeout}, true).
 
 
 %%----------------------------------------------------------------------
@@ -1073,7 +1073,8 @@ handle_msg({get_event_streams=Op,Streams,Timeout}, From, State) ->
     SimpleXml = encode_rpc_operation(get,[Filter]),
     do_send_rpc(Op, SimpleXml, Timeout, From, State).
 
-handle_msg({ssh_cm, _CM, {data, _Ch, _Type, Data}}, State) ->
+handle_msg({ssh_cm, CM, {data, Ch, _Type, Data}}, State) ->
+    ssh_connection:adjust_window(CM,Ch,size(Data)),
     handle_data(Data, State);
 handle_msg({ssh_cm, _CM, _SshCloseMsg}, State) ->
     %% _SshCloseMsg can probably be one of
@@ -1121,17 +1122,38 @@ close(Client) ->
 %% Internal functions
 %%----------------------------------------------------------------------
 call(Client, Msg) ->
-    call(Client, Msg, infinity).
-call(Client, Msg, Timeout) ->
+    call(Client, Msg, infinity, false).
+call(Client, Msg, Timeout) when is_integer(Timeout); Timeout==infinity ->
+    call(Client, Msg, Timeout, false);
+call(Client, Msg, WaitStop) when is_boolean(WaitStop) ->
+    call(Client, Msg, infinity, WaitStop).
+call(Client, Msg, Timeout, WaitStop) ->
     case get_handle(Client) of
 	{ok,Pid} ->
 	    case ct_gen_conn:call(Pid,Msg,Timeout) of
-		{error,{process_down,Client,noproc}} ->
+		{error,{process_down,Pid,noproc}} ->
 		    {error,no_such_client};
-		{error,{process_down,Client,normal}} ->
+		{error,{process_down,Pid,normal}} when WaitStop ->
+		    %% This will happen when server closes connection
+		    %% before clien received rpc-reply on
+		    %% close-session.
+		    ok;
+		{error,{process_down,Pid,normal}} ->
 		    {error,closed};
-		{error,{process_down,Client,Reason}} ->
+		{error,{process_down,Pid,Reason}} ->
 		    {error,{closed,Reason}};
+		Other when WaitStop ->
+		    MRef = erlang:monitor(process,Pid),
+		    receive
+			{'DOWN',MRef,process,Pid,Normal} when Normal==normal;
+							      Normal==noproc ->
+			    Other;
+			{'DOWN',MRef,process,Pid,Reason} ->
+			    {error,{{closed,Reason},Other}}
+		    after Timeout ->
+			    erlang:demonitor(MRef, [flush]),
+			    {error,{timeout,Other}}
+		    end;
 		Other ->
 		    Other
 	    end;
@@ -1259,10 +1281,11 @@ do_send(Connection, SimpleXml) ->
 
 to_xml_doc(Simple) ->
     Prolog = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
-    Xml = list_to_binary(xmerl:export_simple([Simple],
-					     xmerl_xml,
-					     [#xmlAttribute{name=prolog,
-							    value=Prolog}])),
+    Xml = unicode:characters_to_binary(
+	    xmerl:export_simple([Simple],
+				xmerl_xml,
+				[#xmlAttribute{name=prolog,
+					       value=Prolog}])),
     <<Xml/binary,?END_TAG/binary>>.
 
 %%%-----------------------------------------------------------------
@@ -1666,18 +1689,27 @@ log(#connection{host=Host,port=Port,name=Name},Action,Data) ->
 
 
 %% Log callback - called from the error handler process
-format_data(raw,Data) ->
-    io_lib:format("~n~s~n",[hide_password(Data)]);
-format_data(pretty,Data) ->
-    io_lib:format("~n~s~n",[indent(Data)]);
-format_data(html,Data) ->
-    io_lib:format("~n~s~n",[html_format(Data)]).
+format_data(How,Data) ->
+    %% Assuming that the data is encoded as UTF-8.  If it is not, then
+    %% the printout might be wrong, but the format function will not
+    %% crash!
+    %% FIXME: should probably read encoding from the data and do
+    %% unicode:characters_to_binary(Data,InEncoding,utf8) when calling
+    %% log/3 instead of assuming utf8 in as done here!
+    do_format_data(How,unicode:characters_to_binary(Data)).
+
+do_format_data(raw,Data) ->
+    io_lib:format("~n~ts~n",[hide_password(Data)]);
+do_format_data(pretty,Data) ->
+    io_lib:format("~n~ts~n",[indent(Data)]);
+do_format_data(html,Data) ->
+    io_lib:format("~n~ts~n",[html_format(Data)]).
 
 %%%-----------------------------------------------------------------
 %%% Hide password elements from XML data
 hide_password(Bin) ->
     re:replace(Bin,<<"(<password[^>]*>)[^<]*(</password>)">>,<<"\\1*****\\2">>,
-	       [global,{return,binary}]).
+	       [global,{return,binary},unicode]).
 
 %%%-----------------------------------------------------------------
 %%% HTML formatting
@@ -1695,13 +1727,13 @@ indent(Bin) ->
 	    Part ->
 		indent1(lists:reverse(Part)++String,erase(indent))
 	end,
-    list_to_binary(IndentedString).
+    unicode:characters_to_binary(IndentedString).
 
 %% Normalizes the XML document by removing all space and newline
 %% between two XML tags.
 %% Returns a list, no matter if the input was a list or a binary.
-normalize(Str) ->
-    re:replace(Str,<<">[ \r\n\t]+<">>,<<"><">>,[global,{return,list}]).
+normalize(Bin) ->
+    re:replace(Bin,<<">[ \r\n\t]+<">>,<<"><">>,[global,{return,list},unicode]).
 
 
 indent1("<?"++Rest1,Indent1) ->
@@ -1784,7 +1816,8 @@ get_tag([]) ->
 %%% SSH stuff
 ssh_receive_data() ->
     receive
-	{ssh_cm, _CM, {data, _Ch, _Type, Data}} ->
+	{ssh_cm, CM, {data, Ch, _Type, Data}} ->
+	    ssh_connection:adjust_window(CM,Ch,size(Data)),
 	    {ok, Data};
         {ssh_cm, _CM, {Closed, _Ch}} = X when Closed == closed; Closed == eof ->
             {error,X};

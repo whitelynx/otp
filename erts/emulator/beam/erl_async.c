@@ -1,7 +1,7 @@
 /*
  * %CopyrightBegin%
  *
- * Copyright Ericsson AB 2000-2012. All Rights Reserved.
+ * Copyright Ericsson AB 2000-2013. All Rights Reserved.
  *
  * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
@@ -382,10 +382,15 @@ static ERTS_INLINE ErtsAsync *async_get(ErtsThrQ_t *q,
 
 static ERTS_INLINE void call_async_ready(ErtsAsync *a)
 {
+#if ERTS_USE_ASYNC_READY_Q
     Port *p = erts_id2port_sflgs(a->port,
 				 NULL,
 				 0,
 				 ERTS_PORT_SFLGS_INVALID_DRIVER_LOOKUP);
+#else
+    Port *p = erts_thr_id2port_sflgs(a->port,
+				     ERTS_PORT_SFLGS_INVALID_DRIVER_LOOKUP);
+#endif
     if (!p) {
 	if (a->async_free)
 	    a->async_free(a->async_data);
@@ -395,7 +400,11 @@ static ERTS_INLINE void call_async_ready(ErtsAsync *a)
 	    if (a->async_free)
 		a->async_free(a->async_data);
 	}
+#if ERTS_USE_ASYNC_READY_Q
 	erts_port_release(p);
+#else
+	erts_thr_port_release(p);
+#endif
     }
     if (a->pdl)
 	driver_pdl_dec_refc(a->pdl);
@@ -604,7 +613,7 @@ long driver_async(ErlDrvPort ix, unsigned int* key,
 #endif
 
     prt = erts_drvport2port(ix);
-    if (!prt)
+    if (prt == ERTS_INVALID_ERL_DRV_PORT)
 	return -1;
 
     ERTS_SMP_LC_ASSERT(erts_lc_is_port_locked(prt));
@@ -615,7 +624,7 @@ long driver_async(ErlDrvPort ix, unsigned int* key,
     a->sched_id = sched_id;
 #endif
     a->hndl = (DE_Handle*)prt->drv_ptr->handle;
-    a->port = prt->id;
+    a->port = prt->common.id;
     a->pdl = NULL;
     a->async_data = async_data;
     a->async_invoke = async_invoke;

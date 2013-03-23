@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2004-2012. All Rights Reserved.
+%% Copyright Ericsson AB 2004-2013. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -124,6 +124,11 @@ result(Response = {{_, Code, _}, _, _},
 					      (Code =:= 303) orelse 
 					      (Code =:= 307) ->
     redirect(Response, Request);
+result(Response = {{_, 303, _}, _, _},
+       Request = #request{settings =
+			  #http_options{autoredirect = true},
+			  method = post}) ->
+    redirect(Response, Request#request{method = get});
 
 
 result(Response = {{_,503,_}, _, _}, Request) ->
@@ -425,8 +430,6 @@ format_response({StatusLine, Headers, Body}) ->
     Length = list_to_integer(Headers#http_response_h.'content-length'),
     {NewBody, Data} = 
 	case Length of
-	    0 ->
-		{Body, <<>>};
 	    -1 -> % When no lenght indicator is provided
 		{Body, <<>>};
 	    Length when (Length =< size(Body)) ->

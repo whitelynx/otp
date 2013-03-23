@@ -1,7 +1,7 @@
 #
 # %CopyrightBegin%
 #
-# Copyright Ericsson AB 2003-2012. All Rights Reserved.
+# Copyright Ericsson AB 2003-2013. All Rights Reserved.
 #
 # The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
@@ -73,7 +73,8 @@ MODULES= \
 	cth_surefire \
 	ct_netconfc \
 	ct_conn_log_h \
-	cth_conn_log
+	cth_conn_log \
+	ct_groups
 
 TARGET_MODULES= $(MODULES:%=$(EBIN)/%)
 BEAM_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR))
@@ -96,7 +97,7 @@ DTD_FILES = \
 # ----------------------------------------------------
 ERL_COMPILE_FLAGS += -pa ../ebin -I../include -I $(ERL_TOP)/lib/snmp/include/ \
 	-I../../test_server/include -I../../xmerl/inc/ \
-	-I $(ERL_TOP)/lib/kernel/include
+	-I $(ERL_TOP)/lib/kernel/include -Werror
 
 # ----------------------------------------------------
 # Targets
@@ -126,10 +127,10 @@ clean:
 # Special Build Targets
 # ----------------------------------------------------
 $(APP_TARGET): $(APP_SRC) ../vsn.mk
-	sed -e 's;%VSN%;$(VSN);' $< > $@
+	$(vsn_verbose)sed -e 's;%VSN%;$(VSN);' $< > $@
 
 $(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
-	sed -e 's;%VSN%;$(VSN);' $< > $@
+	$(vsn_verbose)sed -e 's;%VSN%;$(VSN);' $< > $@
 
 # ----------------------------------------------------
 # Release Target

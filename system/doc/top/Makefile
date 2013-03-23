@@ -1,7 +1,7 @@
 #
 # %CopyrightBegin%
 #
-# Copyright Ericsson AB 1999-2012. All Rights Reserved.
+# Copyright Ericsson AB 1999-2013. All Rights Reserved.
 #
 # The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
@@ -162,18 +162,35 @@ $(MAN_INDEX): $(MAN_INDEX_SCRIPT)
 #--------------------------------------------------------------------------
 
 $(HTMLDIR)/highlights.html:  highlights.xml
-	date=`date +"%B %e %Y"`; \
-	$(XSLTPROC) --output $(@) --stringparam docgen "$(DOCGEN)" --stringparam topdocdir "$(TOPDOCDIR)" \
-		--stringparam pdfdir "$(PDFREFDIR)"  --stringparam gendate "$$date" --stringparam appname "$(APPLICATION)" \
-		--stringparam appver "$(VSN)" -path  $(DOCGEN)/priv/dtd -path  $(DOCGEN)/priv/dtd_html_entities \
+	date=`date +"%B %e, %Y"`; \
+	$(XSLTPROC) --output $(@) \
+		--stringparam docgen "$(DOCGEN)" \
+		--stringparam topdocdir "$(TOPDOCDIR)" \
+		--stringparam pdfdir "$(PDFREFDIR)"  \
+		--stringparam gendate "$$date" \
+		--stringparam appname "$(APPLICATION)" \
+		--stringparam appver "$(VSN)" \
+		--stringparam stylesheet "$(CSS_FILE)" \
+		--stringparam winprefix "$(WINPREFIX)" \
+		--stringparam logo "$(HTMLLOGO_FILE)" \
+		-path  $(DOCGEN)/priv/dtd \
+		-path  $(DOCGEN)/priv/dtd_html_entities \
 		$(DOCGEN)/priv/xsl/db_html.xsl $<
 
 
 $(HTMLDIR)/incompatible.html:  incompatible.xml
-	date=`date +"%B %e %Y"`; \
-	$(XSLTPROC) --output $(@) --stringparam docgen "$(DOCGEN)" --stringparam topdocdir "$(TOPDOCDIR)" \
-		--stringparam pdfdir "$(PDFREFDIR)"  --stringparam gendate "$$date" --stringparam appname "$(APPLICATION)" \
-		--stringparam appver "$(VSN)" -path  $(DOCGEN)/priv/dtd -path  $(DOCGEN)/priv/dtd_html_entities \
+	date=`date +"%B %e, %Y"`; \
+	$(XSLTPROC) --output $(@) --stringparam docgen "$(DOCGEN)" \
+		--stringparam topdocdir "$(TOPDOCDIR)" \
+		--stringparam pdfdir "$(PDFREFDIR)"  \
+		--stringparam gendate "$$date" \
+		--stringparam appname "$(APPLICATION)" \
+		--stringparam appver "$(VSN)" \
+		--stringparam stylesheet "$(CSS_FILE)" \
+		--stringparam winprefix "$(WINPREFIX)" \
+		--stringparam logo "$(HTMLLOGO_FILE)" \
+		-path  $(DOCGEN)/priv/dtd \
+		-path  $(DOCGEN)/priv/dtd_html_entities \
 		$(DOCGEN)/priv/xsl/db_html.xsl $<
 
 #--------------------------------------------------------------------------

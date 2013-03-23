@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2000-2011. All Rights Reserved.
+%% Copyright Ericsson AB 2000-2013. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -49,13 +49,17 @@
 	  make_link_a/1, make_link_b/1,
 	  read_link_info_for_non_link/1, 
 	  symlinks_a/1, symlinks_b/1,
-	  list_dir_limit/1]).
+	  list_dir_limit/1,
+	  list_dir_error/1,
+	  list_dir/1]).
 
 -export([advise/1]).
 -export([large_write/1]).
 
 %% System probe functions that might be handy to check from the shell
 -export([unix_free/1]).
+
+-export([allocate/1]).
 
 -include_lib("test_server/include/test_server.hrl").
 -include_lib("kernel/include/file.hrl").
@@ -79,7 +83,7 @@ suite() -> [{ct_hooks,[ts_install_cth]}].
 all() -> 
     [read_write_file, {group, dirs}, {group, files},
      delete_a, delete_b, rename_a, rename_b, {group, errors},
-     {group, compression}, {group, links}, list_dir_limit].
+     {group, compression}, {group, links}, list_dir_limit, list_dir].
 
 groups() -> 
     [{dirs, [],
@@ -87,7 +91,7 @@ groups() ->
        cur_dir_1a, cur_dir_1b]},
      {files, [],
       [{group, open}, {group, pos}, {group, file_info},
-       truncate, sync, datasync, advise, large_write]},
+       truncate, sync, datasync, advise, large_write, allocate]},
      {open, [],
       [open1, modes, close, access, read_write, pread_write,
        append, exclusive]},
@@ -108,7 +112,7 @@ groups() ->
        write_compressed, compress_errors]},
      {links, [],
       [make_link_a, make_link_b, read_link_info_for_non_link,
-       symlinks_a, symlinks_b]}].
+       symlinks_a, symlinks_b, list_dir_error]}].
 
 init_per_group(_GroupName, Config) ->
     Config.
@@ -1359,6 +1363,76 @@ check_large_write(Dog, Fd, _, _, []) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+allocate(suite) -> [];
+allocate(doc) -> "Tests that ?PRIM_FILE:allocate/3 at least doesn't crash.";
+allocate(Config) when is_list(Config) ->
+    ?line Dog = test_server:timetrap(test_server:seconds(5)),
+    ?line PrivDir = ?config(priv_dir, Config),
+    ?line Allocate = filename:join(PrivDir,
+			       atom_to_list(?MODULE)
+			       ++"_allocate.fil"),
+
+    Line1 = "Hello\n",
+    Line2 = "World!\n",
+
+    ?line {ok, Fd} = ?PRIM_FILE:open(Allocate, [write, binary]),
+    allocate_and_assert(Fd, 1, iolist_size([Line1, Line2])),
+    ?line ok = ?PRIM_FILE:write(Fd, Line1),
+    ?line ok = ?PRIM_FILE:write(Fd, Line2),
+    ?line ok = ?PRIM_FILE:close(Fd),
+
+    ?line {ok, Fd2} = ?PRIM_FILE:open(Allocate, [write, binary]),
+    allocate_and_assert(Fd2, 1, iolist_size(Line1)),
+    ?line ok = ?PRIM_FILE:write(Fd2, Line1),
+    ?line ok = ?PRIM_FILE:write(Fd2, Line2),
+    ?line ok = ?PRIM_FILE:close(Fd2),
+
+    ?line {ok, Fd3} = ?PRIM_FILE:open(Allocate, [write, binary]),
+    allocate_and_assert(Fd3, 1, iolist_size(Line1) + 1),
+    ?line ok = ?PRIM_FILE:write(Fd3, Line1),
+    ?line ok = ?PRIM_FILE:write(Fd3, Line2),
+    ?line ok = ?PRIM_FILE:close(Fd3),
+
+    ?line {ok, Fd4} = ?PRIM_FILE:open(Allocate, [write, binary]),
+    allocate_and_assert(Fd4, 1, 4 * iolist_size([Line1, Line2])),
+    ?line ok = ?PRIM_FILE:write(Fd4, Line1),
+    ?line ok = ?PRIM_FILE:write(Fd4, Line2),
+    ?line ok = ?PRIM_FILE:close(Fd4),
+
+    ?line test_server:timetrap_cancel(Dog),
+    ok.
+
+allocate_and_assert(Fd, Offset, Length) ->
+    % Just verify that calls to ?PRIM_FILE:allocate/3 don't crash or have
+    % any other negative side effect. We can't really asssert against a
+    % specific return value, because support for file space pre-allocation
+    % depends on the OS, OS version and underlying filesystem.
+    %
+    % The Linux kernel added support for fallocate() in version 2.6.23,
+    % which currently works only for the ext4, ocfs2, xfs and btrfs file
+    % systems. posix_fallocate() is available in glibc as of version
+    % 2.1.94, but it was buggy until glibc version 2.7.
+    %
+    % Mac OS X, as of version 10.3, supports the fcntl operation F_PREALLOCATE.
+    %
+    % Solaris supports posix_fallocate() but only for the UFS file system
+    % apparently (not supported for ZFS).
+    %
+    % FreeBSD 9.0 is the first FreeBSD release supporting posix_fallocate().
+    %
+    % For Windows there's apparently no way to pre-allocate file space, at
+    % least with similar API/semantics as posix_fallocate(), fallocate() or
+    % fcntl F_PREALLOCATE.
+    Result = ?PRIM_FILE:allocate(Fd, Offset, Length),
+    case os:type() of
+        {win32, _} ->
+            ?line {error, enotsup} = Result;
+        _ ->
+            ?line _ = Result
+    end.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 delete_a(suite) -> [];
 delete_a(doc) -> [];
 delete_a(Config) when is_list(Config) ->
@@ -1963,6 +2037,8 @@ symlinks(Config, Handle, Suffix) ->
 		?line #file_info{links=1, type=symlink} = Info2,
 		?line {ok, Name} = 
 		    ?PRIM_FILE_call(read_link, Handle, [Alias]),
+		{ok, Name} =
+		    ?PRIM_FILE_call(read_link_all, Handle, [Alias]),
 		ok
 	end,
     
@@ -2066,6 +2142,41 @@ list_dir_limit_cleanup(Dir, Handle, N, Cnt) ->
     Name = integer_to_list(Cnt),
     ?PRIM_FILE:delete(Handle, filename:join(Dir, Name)),
     list_dir_limit_cleanup(Dir, Handle, N, Cnt+1).
+
+%%%
+%%% Test list_dir() on a non-existing pathname.
+%%%
+
+list_dir_error(Config) ->
+    Priv = ?config(priv_dir, Config),
+    NonExisting = filename:join(Priv, "non-existing-dir"),
+    {error,enoent} = prim_file:list_dir(NonExisting),
+    ok.
+
+%%%
+%%% Test list_dir() and list_dir_all().
+%%%
+
+list_dir(Config) ->
+    RootDir = ?config(priv_dir, Config),
+    TestDir = filename:join(RootDir, ?MODULE_STRING++"_list_dir"),
+    ?PRIM_FILE:make_dir(TestDir),
+    list_dir_1(TestDir, 42, []).
+
+list_dir_1(TestDir, 0, Sorted) ->
+    [ok = ?PRIM_FILE:delete(filename:join(TestDir, F)) ||
+	F <- Sorted],
+    ok = ?PRIM_FILE:del_dir(TestDir);
+list_dir_1(TestDir, Cnt, Sorted0) ->
+    Base = "file" ++ integer_to_list(Cnt),
+    Name = filename:join(TestDir, Base),
+    ok = ?PRIM_FILE:write_file(Name, Base),
+    Sorted = lists:merge([Base], Sorted0),
+    {ok,DirList0} = ?PRIM_FILE:list_dir(TestDir),
+    {ok,DirList1} = ?PRIM_FILE:list_dir_all(TestDir),
+    Sorted = lists:sort(DirList0),
+    Sorted = lists:sort(DirList1),
+    list_dir_1(TestDir, Cnt-1, Sorted).
 
 %%%
 %%% Support for testing large files.

@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2010-2012. All Rights Reserved.
+%% Copyright Ericsson AB 2010-2013. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -31,10 +31,7 @@
          send/2,
          close/1,
          abort/1,
-         notify/2]).
-
-%% Old interface only called from old code.
--export([start/3]).  %% < diameter-1.2 (R15B02)
+         notify/3]).
 
 %% Server start.
 -export([start_link/0]).
@@ -66,19 +63,11 @@
 -define(DEFAULT_TTMO, infinity).
 
 %%% ---------------------------------------------------------------------------
-%%% # notify/2
+%%% # notify/3
 %%% ---------------------------------------------------------------------------
 
-notify(SvcName, T) ->
-    rpc:abcast(nodes(), ?SERVER, {notify, SvcName, T}).
-
-%%% ---------------------------------------------------------------------------
-%%% # start/3
-%%% ---------------------------------------------------------------------------
-
-%% From old code: make is restart.
-start(_T, _Opts, #diameter_service{}) ->
-    {error, restart}.
+notify(Nodes, SvcName, T) ->
+    rpc:abcast(Nodes, ?SERVER, {notify, SvcName, T}).
 
 %%% ---------------------------------------------------------------------------
 %%% # start/1
@@ -134,7 +123,7 @@ pair([_ | Rest], Mods, Acc) ->
     pair(Rest, Mods, Acc);
 
 %% No transport_module or transport_config: defaults.
-pair([], [], []) ->  
+pair([], [], []) ->
     [{[?DEFAULT_TMOD], ?DEFAULT_TCFG, ?DEFAULT_TTMO}];
 
 %% One transport_module, one transport_config.
@@ -283,7 +272,7 @@ handle_cast(Msg, State) ->
 
 %% Remote service is distributing a message.
 handle_info({notify, SvcName, T}, S) ->
-    bang(diameter_service:whois(SvcName), T),
+    diameter_service:notify(SvcName, T),
     {noreply, S};
 
 handle_info(Info, State) ->
@@ -314,13 +303,6 @@ code_change(_OldVsn, State, _Extra) ->
 
 ifc_send(Pid, T) ->
     Pid ! {diameter, T}.
-
-%% bang/2
-
-bang(undefined = No, _) ->
-    No;
-bang(Pid, T) ->
-    Pid ! T.
 
 %% call/1
 

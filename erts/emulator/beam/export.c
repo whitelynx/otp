@@ -1,7 +1,7 @@
 /*
  * %CopyrightBegin%
  *
- * Copyright Ericsson AB 1996-2011. All Rights Reserved.
+ * Copyright Ericsson AB 1996-2013. All Rights Reserved.
  *
  * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
@@ -383,7 +383,9 @@ void export_start_staging(void)
     IndexTable* dst = &export_tables[dst_ix];
     IndexTable* src = &export_tables[src_ix];
     struct export_entry* src_entry;
+#ifdef DEBUG
     struct export_entry* dst_entry;
+#endif
     int i;
 
     ASSERT(dst_ix != src_ix);
@@ -396,7 +398,10 @@ void export_start_staging(void)
     for (i = 0; i < src->entries; i++) {
 	src_entry = (struct export_entry*) erts_index_lookup(src, i);
         src_entry->ep->addressv[dst_ix] = src_entry->ep->addressv[src_ix];
-	dst_entry = (struct export_entry*) index_put_entry(dst, src_entry);
+#ifdef DEBUG
+	dst_entry = (struct export_entry*) 
+#endif
+	    index_put_entry(dst, src_entry);
 	ASSERT(entry_to_blob(src_entry) == entry_to_blob(dst_entry));
     }
     export_staging_unlock();

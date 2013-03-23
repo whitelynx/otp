@@ -1,7 +1,7 @@
 /*
  * %CopyrightBegin%
  *
- * Copyright Ericsson AB 1996-2012. All Rights Reserved.
+ * Copyright Ericsson AB 1996-2013. All Rights Reserved.
  *
  * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
@@ -114,6 +114,16 @@ typedef ERTS_SYS_FD_TYPE ErtsSysFdType;
 #  endif
 #else
 #  define ERTS_DECLARE_DUMMY(X) X
+#endif
+
+#if !defined(__func__)
+#  if !defined(__STDC_VERSION__) || __STDC_VERSION__ < 199901L
+#    if !defined(__GNUC__) ||  __GNUC__ < 2
+#      define __func__ "[unknown_function]"
+#    else
+#      define __func__ __FUNCTION__
+#    endif
+#  endif
 #endif
 
 #if defined(DEBUG) || defined(ERTS_ENABLE_LOCK_CHECK)
@@ -231,9 +241,11 @@ void erl_assert_error(char* expr, char* file, int line);
 #if SIZEOF_VOID_P == 8
 #undef  ARCH_32
 #define ARCH_64
+#define ERTS_SIZEOF_TERM 8
 #elif SIZEOF_VOID_P == 4
 #define ARCH_32
 #undef  ARCH_64
+#define ERTS_SIZEOF_TERM 4
 #else
 #error Neither 32 nor 64 bit architecture
 #endif
@@ -241,6 +253,8 @@ void erl_assert_error(char* expr, char* file, int line);
 #    define HALFWORD_HEAP 1
 #    define HALFWORD_ASSERT 0
 #    define ASSERT_HALFWORD(COND) ASSERT(COND)
+#    undef ERTS_SIZEOF_TERM
+#    define ERTS_SIZEOF_TERM 4
 #else
 #    define HALFWORD_HEAP 0
 #    define HALFWORD_ASSERT 0
@@ -365,6 +379,27 @@ typedef unsigned char byte;
 
 #if defined(ARCH_64) && !HAVE_INT64
 #error 64-bit architecture, but no appropriate type to use for Uint64 and Sint64 found 
+#endif
+
+#ifdef WORDS_BIGENDIAN
+#  define ERTS_HUINT_HVAL_HIGH 0
+#  define ERTS_HUINT_HVAL_LOW 1
+#else
+#  define ERTS_HUINT_HVAL_HIGH 1
+#  define ERTS_HUINT_HVAL_LOW 0
+#endif
+#if ERTS_SIZEOF_TERM == 8
+typedef union {
+    Uint val;
+    Uint32 hval[2];
+} HUint;
+#elif ERTS_SIZEOF_TERM == 4
+typedef union {
+    Uint val;
+    Uint16 hval[2];
+} HUint;
+#else
+#error "Unsupported size of term"
 #endif
 
 #  define ERTS_EXTRA_DATA_ALIGN_SZ(X) \
@@ -505,6 +540,10 @@ __decl_noreturn void __noreturn erl_exit(int n, char*, ...);
 #define ERTS_ABORT_EXIT	(INT_MIN + 1)	/* no crash dump; only abort() */
 #define ERTS_DUMP_EXIT	(INT_MIN + 2)	/* crash dump; then exit() */
 
+#define ERTS_INTERNAL_ERROR(What) \
+    erl_exit(ERTS_ABORT_EXIT, "%s:%d:%s(): Internal error: %s\n", \
+	     __FILE__, __LINE__, __func__, What)
+
 Eterm erts_check_io_info(void *p);
 
 /* Size of misc memory allocated from system dependent code */
@@ -579,6 +618,7 @@ typedef struct _SysDriverOpts {
     char *wd;			/* Working directory. */
     unsigned spawn_type;        /* Bitfield of ERTS_SPAWN_DRIVER | 
 				   ERTS_SPAWN_EXTERNAL | both*/ 
+    int parallelism;            /* Optimize for parallelism */
 } SysDriverOpts;
 
 extern char *erts_default_arg0;
@@ -618,7 +658,7 @@ typedef struct {
 #define ERTS_SYS_DDLL_ERROR_INIT {NULL}
 extern void erts_sys_ddll_free_error(ErtsSysDdllError*);
 extern void erl_sys_ddll_init(void); /* to initialize mutexes etc */
-extern int erts_sys_ddll_open2(char *path, void **handle, ErtsSysDdllError*);
+extern int erts_sys_ddll_open2(const char *path, void **handle, ErtsSysDdllError*);
 #define erts_sys_ddll_open(P,H) erts_sys_ddll_open2(P,H,NULL)
 extern int erts_sys_ddll_open_noext(char *path, void **handle, ErtsSysDdllError*);
 extern int erts_sys_ddll_load_driver_init(void *handle, void **function);
@@ -627,7 +667,7 @@ extern int erts_sys_ddll_close2(void *handle, ErtsSysDdllError*);
 #define erts_sys_ddll_close(H) erts_sys_ddll_close2(H,NULL)
 extern void *erts_sys_ddll_call_init(void *function);
 extern void *erts_sys_ddll_call_nif_init(void *function);
-extern int erts_sys_ddll_sym2(void *handle, char *name, void **function, ErtsSysDdllError*);
+extern int erts_sys_ddll_sym2(void *handle, const char *name, void **function, ErtsSysDdllError*);
 #define erts_sys_ddll_sym(H,N,F) erts_sys_ddll_sym2(H,N,F,NULL)
 extern char *erts_sys_ddll_error(int code);
 
@@ -644,7 +684,7 @@ void erts_sys_schedule_interrupt_timed(int set, erts_short_time_t msec);
 void erts_sys_main_thread(void);
 #endif
 
-extern void erts_sys_prepare_crash_dump(void);
+extern int erts_sys_prepare_crash_dump(int secs);
 extern void erts_sys_pre_init(void);
 extern void erl_sys_init(void);
 extern void erl_sys_args(int *argc, char **argv);
@@ -689,10 +729,13 @@ char * getenv_string(GETENV_STATE *);
 void fini_getenv_state(GETENV_STATE *);
 
 /* xxxP */
+#define SYS_DEFAULT_FLOAT_DECIMALS 20
 void init_sys_float(void);
 int sys_chars_to_double(char*, double*);
-int sys_double_to_chars(double, char*);
-void sys_get_pid(char *);
+int sys_double_to_chars(double, char*, size_t);
+int sys_double_to_chars_ext(double, char*, size_t, size_t);
+int sys_double_to_chars_fast(double, char*, int, int, int);
+void sys_get_pid(char *, size_t);
 
 /* erts_sys_putenv() returns, 0 on success and a value != 0 on failure. */
 int erts_sys_putenv(char *key, char *value);
@@ -986,10 +1029,35 @@ char* win32_errorstr(int);
 #define ERL_FILENAME_UTF8_MAC  (3)
 #define ERL_FILENAME_WIN_WCHAR (4)
 
+/************************************************************************
+ * If a filename in for example list_dir is not in the right encoding, it
+ * will be skipped in the resulting list, but depending on a startup setting
+ * we will inform the user in different ways. These macros define the
+ * different reactions to wrongly coded filenames. In the error case an
+ * exception will be thrown by prim_file.
+ ************************************************************************/
+#define ERL_FILENAME_WARNING_WARNING (0)
+#define ERL_FILENAME_WARNING_IGNORE (1)
+#define ERL_FILENAME_WARNING_ERROR (2)
+
+/***********************************************************************
+ * The user can request a range of character that he/she consider
+ * printable. Currently this can be either latin1 or unicode, but
+ * in the future a set of ranges, or languages, could be specified.
+ ***********************************************************************/
+#define ERL_PRINTABLE_CHARACTERS_LATIN1 (0)
+#define ERL_PRINTABLE_CHARACTERS_UNICODE (1)
+
 int erts_get_native_filename_encoding(void);
 /* The set function is only to be used by erl_init! */
-void erts_set_user_requested_filename_encoding(int encoding); 
+void erts_set_user_requested_filename_encoding(int encoding, int warning);
 int erts_get_user_requested_filename_encoding(void);
+int erts_get_filename_warning_type(void);
+/* This function is called from erl_init. The setting is read by BIF's 
+   in io/io_lib. Setting is not atomic. */
+void erts_set_printable_characters(int range);
+/* Get the setting (ERL_PRINTABLE_CHARACTERS_{LATIN1|UNICODE} */
+int erts_get_printable_characters(void);
 
 void erts_init_sys_common_misc(void);
 

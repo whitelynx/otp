@@ -2,7 +2,7 @@
 %%-----------------------------------------------------------------------
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2006-2011. All Rights Reserved.
+%% Copyright Ericsson AB 2006-2012. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -162,14 +162,17 @@ run(Opts) ->
     {error, Msg} ->
       throw({dialyzer_error, Msg});
     OptsRecord ->
-      case cl_check_init(OptsRecord) of
-	{ok, ?RET_NOTHING_SUSPICIOUS} ->
-	  case dialyzer_cl:start(OptsRecord) of
-	    {?RET_DISCREPANCIES, Warnings} -> Warnings;
-	    {?RET_NOTHING_SUSPICIOUS, []}  -> []
-	  end;
-	{error, ErrorMsg1} ->
-	  throw({dialyzer_error, ErrorMsg1})
+      case OptsRecord#options.check_plt of
+        true ->
+          case cl_check_init(OptsRecord) of
+            {ok, ?RET_NOTHING_SUSPICIOUS} -> ok;
+            {error, ErrorMsg1} -> throw({dialyzer_error, ErrorMsg1})
+          end;
+        false -> ok
+      end,
+      case dialyzer_cl:start(OptsRecord) of
+        {?RET_DISCREPANCIES, Warnings} -> Warnings;
+        {?RET_NOTHING_SUSPICIOUS, []}  -> []
       end
   catch
     throw:{dialyzer_error, ErrorMsg} ->
@@ -380,8 +383,6 @@ message_to_string({pattern_match_cov, [Pat, Type]}) ->
 message_to_string({unmatched_return, [Type]}) ->
   io_lib:format("Expression produces a value of type ~s,"
 		" but this value is unmatched\n", [Type]);
-message_to_string({unused_fun, []}) ->
-  io_lib:format("Function will never be called\n", []);
 message_to_string({unused_fun, [F, A]}) ->
   io_lib:format("Function ~w/~w will never be called\n", [F, A]);
 %%----- Warnings for specs and contracts -------------------
@@ -408,9 +409,10 @@ message_to_string({extra_range, [M, F, A, ExtraRanges, SigRange]}) ->
   io_lib:format("The specification for ~w:~w/~w states that the function"
 		" might also return ~s but the inferred return is ~s\n",
 		[M, F, A, ExtraRanges, SigRange]);
-message_to_string({overlapping_contract, []}) ->
-  "Overloaded contract has overlapping domains;"
-    " such contracts are currently unsupported and are simply ignored\n";
+message_to_string({overlapping_contract, [M, F, A]}) ->
+  io_lib:format("Overloaded contract for ~w:~w/~w has overlapping domains;"
+		" such contracts are currently unsupported and are simply ignored\n",
+		[M, F, A]);
 message_to_string({spec_missing_fun, [M, F, A]}) ->
   io_lib:format("Contract for function that does not exist: ~w:~w/~w\n",
 		[M, F, A]);

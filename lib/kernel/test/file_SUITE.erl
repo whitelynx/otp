@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 1996-2012. All Rights Reserved.
+%% Copyright Ericsson AB 1996-2013. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -45,6 +45,8 @@
 	 init_per_testcase/2, end_per_testcase/2,
 	 read_write_file/1, names/1]).
 -export([cur_dir_0/1, cur_dir_1/1, make_del_dir/1,
+	 list_dir/1,list_dir_error/1,
+	 untranslatable_names/1, untranslatable_names_error/1,
 	 pos1/1, pos2/1]).
 -export([close/1, consult1/1, path_consult/1, delete/1]).
 -export([ eval1/1, path_eval/1, script1/1, path_script/1,
@@ -55,12 +57,13 @@
 -export([rename/1, access/1, truncate/1, datasync/1, sync/1,
 	 read_write/1, pread_write/1, append/1, exclusive/1]).
 -export([ e_delete/1, e_rename/1, e_make_dir/1, e_del_dir/1]).
--export([otp_5814/1]).
+-export([otp_5814/1, otp_10852/1]).
 
 -export([ read_not_really_compressed/1,
 	 read_compressed_cooked/1, read_compressed_cooked_binary/1,
 	 read_cooked_tar_problem/1,
-	 write_compressed/1, compress_errors/1, catenated_gzips/1]).
+	 write_compressed/1, compress_errors/1, catenated_gzips/1,
+	 compress_async_crash/1]).
 
 -export([ make_link/1, read_link_info_for_non_link/1, symlinks/1]).
 
@@ -83,6 +86,8 @@
 -export([read_line_1/1, read_line_2/1, read_line_3/1,read_line_4/1]).
 
 -export([advise/1]).
+
+-export([allocate/1]).
 
 -export([standard_io/1,mini_server/1]).
 
@@ -107,16 +112,18 @@ all() ->
      {group, files}, delete, rename, names, {group, errors},
      {group, compression}, {group, links}, copy,
      delayed_write, read_ahead, segment_read, segment_write,
-     ipread, pid2name, interleaved_read_write, otp_5814,
+     ipread, pid2name, interleaved_read_write, otp_5814, otp_10852,
      large_file, large_write, read_line_1, read_line_2, read_line_3,
      read_line_4, standard_io].
 
 groups() -> 
-    [{dirs, [], [make_del_dir, cur_dir_0, cur_dir_1]},
+    [{dirs, [], [make_del_dir, cur_dir_0, cur_dir_1,
+		 list_dir, list_dir_error, untranslatable_names,
+		 untranslatable_names_error]},
      {files, [],
       [{group, open}, {group, pos}, {group, file_info},
        {group, consult}, {group, eval}, {group, script},
-       truncate, sync, datasync, advise]},
+       truncate, sync, datasync, advise, allocate]},
      {open, [],
       [open1, old_modes, new_modes, path_open, close, access,
        read_write, pread_write, append, open_errors,
@@ -133,7 +140,8 @@ groups() ->
      {compression, [],
       [read_compressed_cooked, read_compressed_cooked_binary,
        read_cooked_tar_problem, read_not_really_compressed,
-       write_compressed, compress_errors, catenated_gzips]},
+       write_compressed, compress_errors, catenated_gzips,
+       compress_async_crash]},
      {links, [],
       [make_link, read_link_info_for_non_link, symlinks]}].
 
@@ -228,7 +236,7 @@ mini_server(Parent) ->
     receive
 	die ->
 	    ok;
-	{io_request,From,To,{put_chars,Data}} ->
+	{io_request,From,To,{put_chars,_Encoding,Data}} ->
 	    Parent ! {io_request,From,To,{put_chars,Data}},
 	    From ! {io_reply, To, ok},
 	    mini_server(Parent);
@@ -514,6 +522,148 @@ win_cur_dir_1(_Config) ->
     %% a SSH connection. We can't test any more.
 
     ok.
+
+
+%%%
+%%% Test list_dir() on a non-existing pathname.
+%%%
+
+list_dir_error(Config) ->
+    Priv = ?config(priv_dir, Config),
+    NonExisting = filename:join(Priv, "non-existing-dir"),
+    {error,enoent} = ?FILE_MODULE:list_dir(NonExisting),
+    ok.
+
+%%%
+%%% Test list_dir() and list_dir_all().
+%%%
+
+list_dir(Config) ->
+    RootDir = ?config(priv_dir, Config),
+    TestDir = filename:join(RootDir, ?MODULE_STRING++"_list_dir"),
+    ?FILE_MODULE:make_dir(TestDir),
+    list_dir_1(TestDir, 42, []).
+
+list_dir_1(TestDir, 0, Sorted) ->
+    [ok = ?FILE_MODULE:delete(filename:join(TestDir, F)) ||
+	F <- Sorted],
+    ok = ?FILE_MODULE:del_dir(TestDir);
+list_dir_1(TestDir, Cnt, Sorted0) ->
+    Base = "file" ++ integer_to_list(Cnt),
+    Name = filename:join(TestDir, Base),
+    ok = ?FILE_MODULE:write_file(Name, Base),
+    Sorted = lists:merge([Base], Sorted0),
+    {ok,DirList0} = ?FILE_MODULE:list_dir(TestDir),
+    {ok,DirList1} = ?FILE_MODULE:list_dir_all(TestDir),
+    Sorted = lists:sort(DirList0),
+    Sorted = lists:sort(DirList1),
+    list_dir_1(TestDir, Cnt-1, Sorted).
+
+untranslatable_names(Config) ->
+    case no_untranslatable_names() of
+	true ->
+	    {skip,"Not a problem on this OS"};
+	false ->
+	    untranslatable_names_1(Config)
+    end.
+
+untranslatable_names_1(Config) ->
+    {ok,OldCwd} = file:get_cwd(),
+    PrivDir = ?config(priv_dir, Config),
+    Dir = filename:join(PrivDir, "untranslatable_names"),
+    ok = file:make_dir(Dir),
+    Node = start_node(untranslatable_names, "+fnu"),
+    try
+	ok = file:set_cwd(Dir),
+	[ok = file:write_file(F, F) || {_,F} <- untranslatable_names()],
+
+	ExpectedListDir0 = [unicode:characters_to_list(N, utf8) ||
+			       {utf8,N} <- untranslatable_names()],
+	ExpectedListDir = lists:sort(ExpectedListDir0),
+	io:format("ExpectedListDir: ~p\n", [ExpectedListDir]),
+	ExpectedListDir = call_and_sort(Node, file, list_dir, [Dir]),
+
+	ExpectedListDirAll0 = [case Enc of
+				   utf8 ->
+				       unicode:characters_to_list(N, utf8);
+				   latin1 ->
+				       N
+			       end || {Enc,N} <- untranslatable_names()],
+	ExpectedListDirAll = lists:sort(ExpectedListDirAll0),
+	io:format("ExpectedListDirAll: ~p\n", [ExpectedListDirAll]),
+	ExpectedListDirAll = call_and_sort(Node, file, list_dir_all, [Dir])
+    after
+	catch test_server:stop_node(Node),
+	file:set_cwd(OldCwd),
+	[file:delete(F) || {_,F} <- untranslatable_names()],
+	file:del_dir(Dir)
+    end,
+    ok.
+
+untranslatable_names_error(Config) ->
+    case no_untranslatable_names() of
+	true ->
+	    {skip,"Not a problem on this OS"};
+	false ->
+	    untranslatable_names_error_1(Config)
+    end.
+
+untranslatable_names_error_1(Config) ->
+    {ok,OldCwd} = file:get_cwd(),
+    PrivDir = ?config(priv_dir, Config),
+    Dir = filename:join(PrivDir, "untranslatable_names_error"),
+    ok = file:make_dir(Dir),
+    Node = start_node(untranslatable_names, "+fnue"),
+    try
+	ok = file:set_cwd(Dir),
+	[ok = file:write_file(F, F) || {_,F} <- untranslatable_names()],
+
+	ExpectedListDir0 = [unicode:characters_to_list(N, utf8) ||
+			       {utf8,N} <- untranslatable_names()],
+	ExpectedListDir = lists:sort(ExpectedListDir0),
+	io:format("ExpectedListDir: ~p\n", [ExpectedListDir]),
+	{error,{no_translation,BadFile}} =
+	    rpc:call(Node, file, list_dir, [Dir]),
+	true = lists:keymember(BadFile, 2, untranslatable_names())
+
+    after
+	catch test_server:stop_node(Node),
+	file:set_cwd(OldCwd),
+	[file:delete(F) || {_,F} <- untranslatable_names()],
+	file:del_dir(Dir)
+    end,
+    ok.
+
+untranslatable_names() ->
+    [{utf8,<<"abc">>},
+     {utf8,<<"def">>},
+     {utf8,<<"Lagerl",195,182,"f">>},
+     {utf8,<<195,150,"stra Emterwik">>},
+     {latin1,<<"M",229,"rbacka">>},
+     {latin1,<<"V",228,"rmland">>}].
+
+call_and_sort(Node, M, F, A) ->
+    {ok,Res} = rpc:call(Node, M, F, A),
+    lists:sort(Res).
+
+no_untranslatable_names() ->
+    case os:type() of
+	{unix,darwin} -> true;
+	{win32,_} -> true;
+	_ -> false
+    end.
+
+start_node(Name, Args) ->
+    [_,Host] = string:tokens(atom_to_list(node()), "@"),
+    ct:log("Trying to start ~w@~s~n", [Name,Host]),
+    case test_server:start_node(Name, peer, [{args,Args}]) of
+	{error,Reason} ->
+	    test_server:fail(Reason);
+	{ok,Node} ->
+	    ct:log("Node ~p started~n", [Node]),
+	    Node
+    end.
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -1617,6 +1767,74 @@ advise(Config) when is_list(Config) ->
     ?line test_server:timetrap_cancel(Dog),
     ok.
 
+allocate(suite) -> [];
+allocate(doc) -> "Tests that ?FILE_MODULE:allocate/3 at least doesn't crash.";
+allocate(Config) when is_list(Config) ->
+    ?line Dog = test_server:timetrap(test_server:seconds(5)),
+    ?line PrivDir = ?config(priv_dir, Config),
+    ?line Allocate = filename:join(PrivDir,
+			       atom_to_list(?MODULE)
+			       ++"_allocate.fil"),
+
+    Line1 = "Hello\n",
+    Line2 = "World!\n",
+
+    ?line {ok, Fd} = ?FILE_MODULE:open(Allocate, [write, binary]),
+    allocate_and_assert(Fd, 1, iolist_size([Line1, Line2])),
+    ?line ok = io:format(Fd, "~s", [Line1]),
+    ?line ok = io:format(Fd, "~s", [Line2]),
+    ?line ok = ?FILE_MODULE:close(Fd),
+
+    ?line {ok, Fd2} = ?FILE_MODULE:open(Allocate, [write, binary]),
+    allocate_and_assert(Fd2, 1, iolist_size(Line1)),
+    ?line ok = io:format(Fd2, "~s", [Line1]),
+    ?line ok = io:format(Fd2, "~s", [Line2]),
+    ?line ok = ?FILE_MODULE:close(Fd2),
+
+    ?line {ok, Fd3} = ?FILE_MODULE:open(Allocate, [write, binary]),
+    allocate_and_assert(Fd3, 1, iolist_size(Line1) + 1),
+    ?line ok = io:format(Fd3, "~s", [Line1]),
+    ?line ok = io:format(Fd3, "~s", [Line2]),
+    ?line ok = ?FILE_MODULE:close(Fd3),
+
+    ?line {ok, Fd4} = ?FILE_MODULE:open(Allocate, [write, binary]),
+    allocate_and_assert(Fd4, 1, 4 * iolist_size([Line1, Line2])),
+    ?line ok = io:format(Fd4, "~s", [Line1]),
+    ?line ok = io:format(Fd4, "~s", [Line2]),
+    ?line ok = ?FILE_MODULE:close(Fd4),
+
+    ?line [] = flush(),
+    ?line test_server:timetrap_cancel(Dog),
+    ok.
+
+allocate_and_assert(Fd, Offset, Length) ->
+    % Just verify that calls to ?PRIM_FILE:allocate/3 don't crash or have
+    % any other negative side effect. We can't really asssert against a
+    % specific return value, because support for file space pre-allocation
+    % depends on the OS, OS version and underlying filesystem.
+    %
+    % The Linux kernel added support for fallocate() in version 2.6.23,
+    % which currently works only for the ext4, ocfs2, xfs and btrfs file
+    % systems. posix_fallocate() is available in glibc as of version
+    % 2.1.94, but it was buggy until glibc version 2.7.
+    %
+    % Mac OS X, as of version 10.3, supports the fcntl operation F_PREALLOCATE.
+    %
+    % Solaris supports posix_fallocate() but only for the UFS file system
+    % apparently (not supported for ZFS).
+    %
+    % FreeBSD 9.0 is the first FreeBSD release supporting posix_fallocate().
+    %
+    % For Windows there's apparently no way to pre-allocate file space, at
+    % least with same semantics as posix_fallocate(), fallocate() and
+    % fcntl F_PREALLOCATE.
+    Result = ?FILE_MODULE:allocate(Fd, Offset, Length),
+    case os:type() of
+        {win32, _} ->
+            ?line {error, enotsup} = Result;
+        _ ->
+            ?line _ = Result
+    end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -2242,6 +2460,57 @@ compress_errors(Config) when is_list(Config) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+compress_async_crash(suite) -> [];
+compress_async_crash(doc) -> [];
+compress_async_crash(Config) when is_list(Config) ->
+    ?line DataDir = ?config(data_dir, Config),
+    ?line Path = filename:join(DataDir, "test.gz"),
+    ExpectedData = <<"qwerty">>,
+
+    ?line _ = ?FILE_MODULE:delete(Path),
+    ?line {ok, Fd} = ?FILE_MODULE:open(Path, [write, binary, compressed]),
+    ?line ok = ?FILE_MODULE:write(Fd, ExpectedData),
+    ?line ok = ?FILE_MODULE:close(Fd),
+
+    % Test that when using async thread pool, the emulator doesn't crash
+    % when the efile port driver is stopped while a compressed file operation
+    % is in progress (being carried by an async thread).
+    ?line ok = compress_async_crash_loop(10000, Path, ExpectedData),
+    ?line ok = ?FILE_MODULE:delete(Path),
+    ok.
+
+compress_async_crash_loop(0, _Path, _ExpectedData) ->
+    ok;
+compress_async_crash_loop(N, Path, ExpectedData) ->
+    Parent = self(),
+    {Pid, Ref} = spawn_monitor(
+            fun() ->
+                    ?line {ok, Fd} = ?FILE_MODULE:open(
+                                        Path, [read, compressed, raw, binary]),
+                    Len = byte_size(ExpectedData),
+                    Parent ! {self(), continue},
+                    ?line {ok, ExpectedData} = ?FILE_MODULE:read(Fd, Len),
+                    ?line ok = ?FILE_MODULE:close(Fd),
+                    receive foobar -> ok end
+            end),
+    receive
+        {Pid, continue} ->
+            exit(Pid, shutdown),
+            receive
+                {'DOWN', Ref, _, _, Reason} ->
+                    ?line shutdown = Reason
+            end;
+        {'DOWN', Ref, _, _, Reason2} ->
+            test_server:fail({worker_exited, Reason2})
+    after 60000 ->
+            exit(Pid, shutdown),
+            erlang:demonitor(Ref, [flush]),
+            test_server:fail(worker_timeout)
+    end,
+    compress_async_crash_loop(N - 1, Path, ExpectedData).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 altname(doc) ->
     "Test the file:altname/1 function";
 altname(suite) ->
@@ -2330,6 +2599,7 @@ symlinks(suite) -> [];
 symlinks(Config) when is_list(Config) ->
     ?line Dog = test_server:timetrap(test_server:seconds(10)),
     ?line {error, _} = ?FILE_MODULE:read_link(lists:duplicate(10000,$a)),
+    {error, _} = ?FILE_MODULE:read_link_all(lists:duplicate(10000,$a)),
     ?line RootDir = ?config(priv_dir, Config),
     ?line NewDir = filename:join(RootDir, 
 				 atom_to_list(?MODULE)
@@ -2353,6 +2623,7 @@ symlinks(Config) when is_list(Config) ->
 		?line {ok, Info2} = ?FILE_MODULE:read_link_info(Alias),
 		?line #file_info{links=1, type=symlink} = Info2,
 		?line {ok, Name} = ?FILE_MODULE:read_link(Alias),
+		{ok, Name} = ?FILE_MODULE:read_link_all(Alias),
 		ok
 	  end,
     
@@ -3244,6 +3515,49 @@ otp_5814(Config) when is_list(Config) ->
     file:delete(File),
     ?line ?t:timetrap_cancel(Dog),
     ok.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+otp_10852(suite) ->
+    [];
+otp_10852(doc) ->
+    ["OTP-10852. +fnu and latin1 filenames"];
+otp_10852(Config) when is_list(Config) ->
+    Node = start_node(erl_pp_helper, "+fnu"),
+    Dir = ?config(priv_dir, Config),
+    B = filename:join(Dir, <<"\xE4">>),
+    ok = rpc_call(Node, get_cwd, [B]),
+    {error, no_translation} = rpc_call(Node, set_cwd, [B]),
+    ok = rpc_call(Node, delete, [B]),
+    ok = rpc_call(Node, rename, [B, B]),
+    ok = rpc_call(Node, read_file_info, [B]),
+    ok = rpc_call(Node, read_link_info, [B]),
+    ok = rpc_call(Node, read_link, [B]),
+    ok = rpc_call(Node, write_file_info, [B,#file_info{}]),
+    ok = rpc_call(Node, list_dir, [B]),
+    ok = rpc_call(Node, list_dir_all, [B]),
+    ok = rpc_call(Node, read_file, [B]),
+    ok = rpc_call(Node, make_link, [B,B]),
+    ok = rpc_call(Node, make_symlink, [B,B]),
+    ok = rpc_call(Node, delete, [B]),
+    ok = rpc_call(Node, make_dir, [B]),
+    ok = rpc_call(Node, del_dir, [B]),
+    ok = rpc_call(Node, write_file, [B,B]),
+    {ok, Fd} = rpc_call(Node, open, [B,[read]]),
+    ok = rpc_call(Node, close, [Fd]),
+    {ok,0} = rpc_call(Node, copy, [B,B]),
+    {ok, Fd2, B} = rpc_call(Node, path_open, [["."], B, [read]]),
+    ok = rpc_call(Node, close, [Fd2]),
+    true = test_server:stop_node(Node),
+    ok.
+
+rpc_call(N, F, As) ->
+    case rpc:call(N, ?FILE_MODULE, F, As) of
+        {error, enotsup} -> ok;
+        {error, enoent} -> ok;
+        {error, badarg} -> ok;
+        Else -> Else
+    end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 

@@ -10,7 +10,7 @@ MODULES= \
 	apply_SUITE \
 	beam_validator_SUITE \
 	beam_disasm_SUITE \
-	beam_expect_SUITE \
+	beam_except_SUITE \
 	bs_bincomp_SUITE \
 	bs_bit_binaries_SUITE \
 	bs_construct_SUITE \
@@ -29,7 +29,6 @@ MODULES= \
 	match_SUITE \
 	misc_SUITE \
 	num_bif_SUITE \
-	pmod_SUITE \
 	receive_SUITE \
 	record_SUITE \
 	trycatch_SUITE \
@@ -39,7 +38,7 @@ MODULES= \
 NO_OPT= \
 	andor \
 	apply \
-	beam_expect \
+	beam_except \
 	bs_construct \
         bs_match \
 	bs_utf \
@@ -76,6 +75,7 @@ INLINE= \
 
 CORE_MODULES = \
 	bs_shadowed_size_var \
+	unused_multiple_values_error \
 	nested_call_in_case
 
 

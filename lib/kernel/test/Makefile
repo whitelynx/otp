@@ -1,7 +1,7 @@
 #
 # %CopyrightBegin%
 #
-# Copyright Ericsson AB 1997-2012. All Rights Reserved.
+# Copyright Ericsson AB 1997-2013. All Rights Reserved.
 #
 # The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
@@ -48,6 +48,7 @@ MODULES= \
 	erl_distribution_SUITE \
 	erl_distribution_wb_SUITE \
 	erl_prim_loader_SUITE \
+	error_handler_SUITE \
 	error_logger_SUITE \
 	error_logger_warn_SUITE \
 	file_SUITE \
@@ -73,6 +74,7 @@ MODULES= \
 	seq_trace_SUITE \
 	wrap_log_reader_SUITE \
 	cleanup \
+	ignore_cores \
 	zlib_SUITE \
 	loose_node \
 	sendfile_SUITE

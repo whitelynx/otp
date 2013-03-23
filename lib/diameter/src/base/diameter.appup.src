@@ -2,7 +2,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2010-2012. All Rights Reserved.
+%% Copyright Ericsson AB 2010-2013. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -20,30 +20,32 @@
 
 {"%VSN%",
  [
-  {"0.9",  [{restart_application, diameter}]},
-  {"0.10", [{restart_application, diameter}]},
-  {"1.0",  [{restart_application, diameter}]},
-  {"1.1",  [%% new code
-            {add_module, diameter_transport},
-            %% modified code
-            {load, diameter_sctp},
-            {load, diameter_stats},
-            {load, diameter_service},
-            {load, diameter_config},
-            {load, diameter_codec},
-            {load, diameter_watchdog},
-            {load, diameter_peer},
-            {load, diameter_peer_fsm},
-            {load, diameter},
-            %% unmodified but including modified diameter.hrl
-            {load, diameter_callback},
-            {load, diameter_capx},
-            {load, diameter_types}]}
+  {"0.9",   [{restart_application, diameter}]},  %% R14B03
+  {"0.10",  [{restart_application, diameter}]},  %% R14B04
+  {"1.0",   [{restart_application, diameter}]},  %% R15B
+  {"1.1",   [{restart_application, diameter}]},  %% R15B01
+  {"1.2",   [{restart_application, diameter}]},  %% R15B02
+  {"1.2.1", [{restart_application, diameter}]},
+  {"1.3",   [{restart_application, diameter}]},  %% R15B03
+  {"1.3.1", [{restart_application, diameter}]},
+  {"1.4",   [{restart_application, diameter}]},  %% R16A
+  {"1.4.1", [{load_module, diameter_reg},        %% R16B
+             {load_module, diameter_stats},
+             {load_module, diameter_service},
+             {load_module, diameter_watchdog},
+             {load_module, diameter_capx},
+             {load_module, diameter}]}
  ],
  [
-  {"0.9",  [{restart_application, diameter}]},
-  {"0.10", [{restart_application, diameter}]},
-  {"1.0",  [{restart_application, diameter}]},
-  {"1.1",  [{restart_application, diameter}]}
+  {"0.9",   [{restart_application, diameter}]},
+  {"0.10",  [{restart_application, diameter}]},
+  {"1.0",   [{restart_application, diameter}]},
+  {"1.1",   [{restart_application, diameter}]},
+  {"1.2",   [{restart_application, diameter}]},
+  {"1.2.1", [{restart_application, diameter}]},
+  {"1.3",   [{restart_application, diameter}]},
+  {"1.3.1", [{restart_application, diameter}]},
+  {"1.4",   [{restart_application, diameter}]},
+  {"1.4.1", [{restart_application, diameter}]}
  ]
 }.

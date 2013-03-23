@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 1996-2012. All Rights Reserved.
+%% Copyright Ericsson AB 1996-2013. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -96,7 +96,7 @@
 	 misc1_do/1, safe_fixtable_do/1, info_do/1, dups_do/1, heavy_lookup_do/1,
 	 heavy_lookup_element_do/1, member_do/1, otp_5340_do/1, otp_7665_do/1, meta_wb_do/1,
 	 do_heavy_concurrent/1, tab2file2_do/2, exit_large_table_owner_do/2,
-         types_do/1, sleeper/0, rpc_externals/0, memory_do/1,
+         types_do/1, sleeper/0, memory_do/1,
 	 ms_tracee_dummy/1, ms_tracee_dummy/2, ms_tracee_dummy/3, ms_tracee_dummy/4
 	]).
 
@@ -2170,20 +2170,29 @@ heir_do(Opts) ->
     ?line undefined = ets:info(foo),
 
     %% When heir dies and pid reused before founder dies
-    NextPidIx = erts_debug:get_internal_state(next_pid),
-    {Founder4,MrefF4} = my_spawn_monitor(fun()->heir_founder(Master,"The dying heir",Opts)end),
-    {Heir4,MrefH4} = my_spawn_monitor(fun()->heir_heir(Founder4)end),
-    Founder4 ! {go, Heir4},
-    ?line {'DOWN', MrefH4, process, Heir4, normal} = receive_any(),
-    erts_debug:set_internal_state(next_pid, NextPidIx),
-    {Heir4,MrefH4_B} = spawn_monitor_with_pid(Heir4, 
-					      fun()-> ?line die_please = receive_any() end),
-    Founder4 ! die_please,
-    ?line {'DOWN', MrefF4, process, Founder4, normal} = receive_any(),
-    Heir4 ! die_please,
-    ?line {'DOWN', MrefH4_B, process, Heir4, normal} = receive_any(),
-    ?line undefined = ets:info(foo), 
-
+    repeat_while(fun() ->
+			 NextPidIx = erts_debug:get_internal_state(next_pid),
+			 {Founder4,MrefF4} = my_spawn_monitor(fun()->heir_founder(Master,"The dying heir",Opts)end),
+			 {Heir4,MrefH4} = my_spawn_monitor(fun()->heir_heir(Founder4)end),
+			 Founder4 ! {go, Heir4},
+			 ?line {'DOWN', MrefH4, process, Heir4, normal} = receive_any(),
+			 erts_debug:set_internal_state(next_pid, NextPidIx),
+			 DoppelGanger = spawn_monitor_with_pid(Heir4, 
+							       fun()-> ?line die_please = receive_any() end),
+			 Founder4 ! die_please,
+			 ?line {'DOWN', MrefF4, process, Founder4, normal} = receive_any(),
+			 case DoppelGanger of
+			     {Heir4,MrefH4_B} ->
+				 Heir4 ! die_please,
+				 ?line {'DOWN', MrefH4_B, process, Heir4, normal} = receive_any(),
+				 ?line undefined = ets:info(foo),
+				 false;
+			     failed ->
+				 io:format("Failed to spawn process with pid ~p\n", [Heir4]),
+				 true % try again
+			 end			  
+		 end),
+	    
     ?line verify_etsmem(EtsMem).
 
 heir_founder(Master, HeirData, Opts) ->    
@@ -3209,6 +3218,7 @@ delete_large_tab_1(Name, Flags, Data, Fix) ->
 				end
 			end,
 			0),
+    SchedTracerMon = monitor(process, SchedTracer),
     ?line Loopers = start_loopers(erlang:system_info(schedulers),
 				  Prio,
 				  fun (_) -> erlang:yield() end,
@@ -3228,12 +3238,14 @@ delete_large_tab_1(Name, Flags, Data, Fix) ->
 		      N >= 5 -> ?line ok;
 		      true -> ?line ?t:fail()
 		  end
-	  end.
+	  end,
+    receive {'DOWN',SchedTracerMon,process,SchedTracer,_} -> ok end,
+    ok.
 
 delete_large_named_table(doc) ->
     "Delete a large name table and try to create a new table with the same name in another process.";
 delete_large_named_table(Config) when is_list(Config) ->    
-    ?line Data = [{erlang:phash2(I, 16#ffffff),I} || I <- lists:seq(1, 500000)],
+    ?line Data = [{erlang:phash2(I, 16#ffffff),I} || I <- lists:seq(1, 200000)],
     ?line EtsMem = etsmem(),
     repeat_for_opts(fun(Opts) -> delete_large_named_table_do(Opts,Data) end),
     ?line verify_etsmem(EtsMem),
@@ -3255,16 +3267,17 @@ delete_large_named_table_1(Name, Flags, Data, Fix) ->
 	    ?line lists:foreach(fun({K,_}) -> ets:delete(Tab, K) end, Data)
     end,
     Parent = self(),
-    Pid = my_spawn_link(fun() ->
-			     receive
-				 {trace,Parent,call,_} ->
-				     ets_new(Name, [named_table])
-			     end
-		     end),
+    {Pid, MRef} = my_spawn_opt(fun() ->
+				       receive
+					   {trace,Parent,call,_} ->
+					       ets_new(Name, [named_table])
+				       end
+			       end, [link, monitor]),
     ?line erlang:trace(self(), true, [call,{tracer,Pid}]),
     ?line erlang:trace_pattern({ets,delete,1}, true, [global]),
     ?line erlang:yield(), true = ets:delete(Tab),
     ?line erlang:trace_pattern({ets,delete,1}, false, [global]),
+    receive {'DOWN',MRef,process,Pid,_} -> ok end,
     ok.
 
 evil_delete(doc) ->
@@ -5787,25 +5800,20 @@ receive_any_spinning(Loops, N, Tries) when N>0 ->
 
 
 spawn_monitor_with_pid(Pid, Fun) when is_pid(Pid) ->
-    spawn_monitor_with_pid(Pid, Fun, 1, 10).
+    spawn_monitor_with_pid(Pid, Fun, 10).
 
-spawn_monitor_with_pid(Pid, Fun, N, M) when N > M*10 ->
-    spawn_monitor_with_pid(Pid, Fun, N, M*10);
-spawn_monitor_with_pid(Pid, Fun, N, M) ->
-    ?line false = is_process_alive(Pid),
+spawn_monitor_with_pid(_, _, 0) ->
+    failed;
+spawn_monitor_with_pid(Pid, Fun, N) ->
     case my_spawn(fun()-> case self() of
 			      Pid -> Fun();
 			      _ -> die
 			  end
 		  end) of
-	Pid ->	    
+	Pid ->
 	    {Pid, erlang:monitor(process, Pid)};
 	Other ->
-	    case N rem M of
-		0 -> io:format("Failed ~p times to get pid ~p (current = ~p)\n",[N,Pid,Other]);
-		_ -> ok
-	    end,
-	    spawn_monitor_with_pid(Pid,Fun,N+1,M)
+	    spawn_monitor_with_pid(Pid,Fun,N-1)
     end.
 
 
@@ -5985,33 +5993,103 @@ make_ext_ref() ->
 init_externals() ->
     case get(externals) of
 	undefined ->
-	    SysDistSz = ets:info(sys_dist,size),
-	    ?line Pa = filename:dirname(code:which(?MODULE)),
-	    ?line {ok, Node} = test_server:start_node(plopp, slave, [{args, " -pa " ++ Pa}]),
-	    ?line Res = case rpc:call(Node, ?MODULE, rpc_externals, []) of
-			    {badrpc, {'EXIT', E}} ->
-				test_server:fail({rpcresult, E});
-			    R -> R
-			end,
-	    ?line test_server:stop_node(Node),
-
-	    %% Wait for table 'sys_dist' to stabilize
-	    repeat_while(fun() ->
-				 case ets:info(sys_dist,size) of
-				     SysDistSz -> false;
-				     Sz ->
-					 io:format("Waiting for sys_dist to revert size from ~p to size ~p\n",
-						   [Sz, SysDistSz]),
-					 receive after 1000 -> true end
-				 end
-			 end),
+	    OtherNode = {gurka@sallad, 1},
+	    Res = {mk_pid(OtherNode, 7645, 8123),
+		   mk_port(OtherNode, 187489773),
+		   mk_ref(OtherNode, [262143, 1293964255, 3291964278])},
 	    put(externals, Res);
 
 	{_,_,_} -> ok
     end.
 
-rpc_externals() ->
-    {self(), make_port(), make_ref()}.
+%%
+%% Node container constructor functions
+%%
+
+-define(VERSION_MAGIC,       131).
+-define(PORT_EXT,            102).
+-define(PID_EXT,             103).
+-define(NEW_REFERENCE_EXT,   114).
+
+uint32_be(Uint) when is_integer(Uint), 0 =< Uint, Uint < 1 bsl 32 ->
+    [(Uint bsr 24) band 16#ff,
+     (Uint bsr 16) band 16#ff,
+     (Uint bsr 8) band 16#ff,
+     Uint band 16#ff];
+uint32_be(Uint) ->
+    exit({badarg, uint32_be, [Uint]}).
+
+uint16_be(Uint) when is_integer(Uint), 0 =< Uint, Uint < 1 bsl 16 ->
+    [(Uint bsr 8) band 16#ff,
+     Uint band 16#ff];
+uint16_be(Uint) ->
+    exit({badarg, uint16_be, [Uint]}).
+
+uint8(Uint) when is_integer(Uint), 0 =< Uint, Uint < 1 bsl 8 ->
+    Uint band 16#ff;
+uint8(Uint) ->
+    exit({badarg, uint8, [Uint]}).
+
+mk_pid({NodeName, Creation}, Number, Serial) when is_atom(NodeName) ->
+    <<?VERSION_MAGIC, NodeNameExt/binary>> = term_to_binary(NodeName),
+    mk_pid({NodeNameExt, Creation}, Number, Serial);
+mk_pid({NodeNameExt, Creation}, Number, Serial) ->
+    case catch binary_to_term(list_to_binary([?VERSION_MAGIC,
+					?PID_EXT,
+					NodeNameExt,
+					uint32_be(Number),
+					uint32_be(Serial),
+					uint8(Creation)])) of
+	Pid when is_pid(Pid) ->
+	    Pid;
+	{'EXIT', {badarg, _}} ->
+	    exit({badarg, mk_pid, [{NodeNameExt, Creation}, Number, Serial]});
+	Other ->
+	    exit({unexpected_binary_to_term_result, Other})
+    end.
+
+mk_port({NodeName, Creation}, Number) when is_atom(NodeName) ->
+    <<?VERSION_MAGIC, NodeNameExt/binary>> = term_to_binary(NodeName),
+    mk_port({NodeNameExt, Creation}, Number);
+mk_port({NodeNameExt, Creation}, Number) ->
+    case catch binary_to_term(list_to_binary([?VERSION_MAGIC,
+					      ?PORT_EXT,
+					      NodeNameExt,
+					      uint32_be(Number),
+					      uint8(Creation)])) of
+	Port when is_port(Port) ->
+	    Port;
+	{'EXIT', {badarg, _}} ->
+	    exit({badarg, mk_port, [{NodeNameExt, Creation}, Number]});
+	Other ->
+	    exit({unexpected_binary_to_term_result, Other})
+    end.
+
+mk_ref({NodeName, Creation}, Numbers) when is_atom(NodeName),
+					   is_integer(Creation),
+					   is_list(Numbers) ->
+    <<?VERSION_MAGIC, NodeNameExt/binary>> = term_to_binary(NodeName),
+    mk_ref({NodeNameExt, Creation}, Numbers);
+mk_ref({NodeNameExt, Creation}, Numbers) when is_binary(NodeNameExt),
+					      is_integer(Creation),
+					      is_list(Numbers) ->
+    case catch binary_to_term(list_to_binary([?VERSION_MAGIC,
+					      ?NEW_REFERENCE_EXT,
+					      uint16_be(length(Numbers)),
+					      NodeNameExt,
+					      uint8(Creation),
+					      lists:map(fun (N) ->
+								uint32_be(N)
+							end,
+							Numbers)])) of
+	Ref when is_reference(Ref) ->
+	    Ref;
+	{'EXIT', {badarg, _}} ->
+	    exit({badarg, mk_ref, [{NodeNameExt, Creation}, Numbers]});
+	Other ->
+	    exit({unexpected_binary_to_term_result, Other})
+    end.
+
 
 make_sub_binary(Bin) when is_binary(Bin) ->
     {_,B} = split_binary(list_to_binary([0,1,3,Bin]), 3),

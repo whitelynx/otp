@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2007-2012. All Rights Reserved.
+%% Copyright Ericsson AB 2007-2013. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -23,8 +23,6 @@
 
 -module(ssl_manager).
 -behaviour(gen_server).
-
--include("ssl_internal.hrl").
 
 %% Internal application API
 -export([start_link/1, start_link_dist/1,
@@ -144,8 +142,15 @@ lookup_trusted_cert(DbHandle, Ref, SerialNumber, Issuer) ->
 new_session_id(Port) ->
     call({new_session_id, Port}).
 
+%%--------------------------------------------------------------------
+-spec clean_cert_db(reference(), binary()) -> ok.
+%%
+%% Description: Send clean request of cert db to ssl_manager process should
+%% be called by ssl-connection processes. 
+%%--------------------------------------------------------------------
 clean_cert_db(Ref, File) ->
-    erlang:send_after(?CLEAN_CERT_DB, self(), {clean_cert_db, Ref, File}).
+    erlang:send_after(?CLEAN_CERT_DB, get(ssl_manager), {clean_cert_db, Ref, File}),
+    ok.
 
 %%--------------------------------------------------------------------
 -spec register_session(inet:port_number(), #session{}) -> ok.
@@ -191,7 +196,7 @@ init([Name, Opts]) ->
 	proplists:get_value(session_lifetime, Opts, ?'24H_in_sec'),
     CertDb = ssl_certificate_db:create(),
     SessionCache = CacheCb:init(proplists:get_value(session_cb_init_args, Opts, [])),
-    Timer = erlang:send_after(SessionLifeTime * 1000, 
+    Timer = erlang:send_after(SessionLifeTime * 1000 + 5000, 
 			      self(), validate_sessions),
     erlang:send_after(?CLEAR_PEM_CACHE, self(), clear_pem_cache),
     {ok, #state{certificate_db = CertDb,
@@ -322,19 +327,12 @@ handle_info(clear_pem_cache, #state{certificate_db = [_,_,PemChace]} = State) ->
 
 handle_info({clean_cert_db, Ref, File},
 	    #state{certificate_db = [CertDb,RefDb, PemCache]} = State) ->
-    case ssl_certificate_db:ref_count(Ref, RefDb, 0) of
-	0 ->
-	    MD5 = crypto:md5(File),
-	    case ssl_certificate_db:lookup_cached_pem(PemCache, MD5) of
-		[{Content, Ref}] ->
-		    ssl_certificate_db:insert(MD5, Content, PemCache);
-		undefined ->
-		    ok
-	    end,
-	    ssl_certificate_db:remove(Ref, RefDb),
-	    ssl_certificate_db:remove_trusted_certs(Ref, CertDb);
+    
+    case ssl_certificate_db:lookup(Ref, RefDb) of
+	undefined -> %% Alredy cleaned
+	    ok;
 	_ ->
-	    ok
+	    clean_cert_db(Ref, CertDb, RefDb, PemCache, File)
     end,
     {noreply, State};
 
@@ -347,7 +345,7 @@ handle_info(_Info, State) ->
     {noreply, State}.
 
 %%--------------------------------------------------------------------
--spec terminate(reason(), #state{}) -> term().
+-spec terminate(reason(), #state{}) -> ok.
 %%		       
 %% Description: This function is called by a gen_server when it is about to
 %% terminate. It should be the opposite of Module:init/1 and do any necessary
@@ -465,4 +463,20 @@ new_id(Port, Tries, Cache, CacheCb) ->
 	    Id;
 	_ ->
 	    new_id(Port, Tries - 1, Cache, CacheCb)
+    end.
+
+clean_cert_db(Ref, CertDb, RefDb, PemCache, File) ->
+    case ssl_certificate_db:ref_count(Ref, RefDb, 0) of
+	0 ->	  
+	    MD5 = crypto:md5(File),
+	    case ssl_certificate_db:lookup_cached_pem(PemCache, MD5) of
+		[{Content, Ref}] ->
+		    ssl_certificate_db:insert(MD5, Content, PemCache);		
+		_ ->
+		    ok
+	    end,
+	    ssl_certificate_db:remove(Ref, RefDb),
+	    ssl_certificate_db:remove_trusted_certs(Ref, CertDb);
+	_ ->
+	    ok
     end.

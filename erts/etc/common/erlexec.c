@@ -1,7 +1,7 @@
 /*
  * %CopyrightBegin%
  *
- * Copyright Ericsson AB 1996-2012. All Rights Reserved.
+ * Copyright Ericsson AB 1996-2013. All Rights Reserved.
  *
  * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
@@ -124,9 +124,11 @@ static char *pluss_val_switches[] = {
     "bwt",
     "cl",
     "ct",
+    "tbt",
     "wt",
     "ws",
     "ss",
+    "pp",
     NULL
 };
 /* +h arguments with values */
@@ -182,7 +184,6 @@ void error(char* format, ...);
 #if !defined(ERTS_HAVE_SMP_EMU)
 static void usage_notsup(const char *switchname);
 #endif
-static void usage_msg(const char *msg);
 static char **build_args_from_env(char *env_var);
 static char **build_args_from_string(char *env_var);
 static void initial_argv_massage(int *argc, char ***argv);
@@ -799,7 +800,9 @@ int main(int argc, char **argv)
 		  case 'A':
 		  case 'b':
 		  case 'i':
+		  case 'n':
 		  case 'P':
+		  case 'Q':
 		  case 'S':
 		  case 't':
 		  case 'T':
@@ -909,6 +912,16 @@ int main(int argc, char **argv)
 			  i++;
 		      }
 		      break;
+		  case 'p':
+		      if (argv[i][2] != 'c' || argv[i][3] != '\0')
+			  goto the_default;
+		      if (i+1 >= argc)
+			  usage(argv[i]);
+		      argv[i][0] = '-';
+		      add_Eargs(argv[i]);
+		      add_Eargs(argv[i+1]);
+		      i++;
+		      break;
 		  case 'z':
 		      if (!is_one_of_strings(&argv[i][2], plusz_val_switches)) {
 			  goto the_default;
@@ -989,8 +1002,7 @@ int main(int argc, char **argv)
 
     if (print_args_exit) {
 	for (i = 1; i < EargsCnt; i++)
-	    printf("%s ", Eargsp[i]);
-	printf("\n");
+	    printf("%s\n", Eargsp[i]);
 	exit(0);
     }
 
@@ -1104,7 +1116,8 @@ usage_aux(void)
 	  "[-make] [-man [manopts] MANPAGE] [-x] [-emu_args] "
 	  "[-args_file FILENAME] [+A THREADS] [+a SIZE] [+B[c|d|i]] [+c] "
 	  "[+h HEAP_SIZE_OPTION] [+K BOOLEAN] "
-	  "[+l] [+M<SUBSWITCH> <ARGUMENT>] [+P MAX_PROCS] [+R COMPAT_REL] "
+	  "[+l] [+M<SUBSWITCH> <ARGUMENT>] [+P MAX_PROCS] [+Q MAX_PORTS] "
+	  "[+R COMPAT_REL] "
 	  "[+r] [+rg READER_GROUPS_LIMIT] [+s SCHEDULER_OPTION] "
 	  "[+S NO_SCHEDULERS:NO_SCHEDULERS_ONLINE] [+T LEVEL] [+V] [+v] "
 	  "[+W<i|w>] [+z MISC_OPTION] [args ...]\n");
@@ -1126,13 +1139,6 @@ usage_notsup(const char *switchname)
     usage_aux();
 }
 #endif
-
-static void
-usage_msg(const char *msg)
-{
-    fprintf(stderr, "%s\n", msg);
-    usage_aux();
-}
 
 static void
 usage_format(char *format, ...)

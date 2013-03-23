@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2010-2012. All Rights Reserved.
+%% Copyright Ericsson AB 2010-2013. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -44,6 +44,9 @@
          stop/0]).
 
 -export_type([evaluable/0,
+              restriction/0,
+              remotes/0,
+              sequence/0,
               app_alias/0,
               service_name/0,
               capability/0,
@@ -211,7 +214,7 @@ origin_state_id() ->
    -> any().
 
 call(SvcName, App, Message, Options) ->
-    diameter_service:call(SvcName, {alias, App}, Message, Options).
+    diameter_traffic:send_request(SvcName, {alias, App}, Message, Options).
 
 call(SvcName, App, Message) ->
     call(SvcName, App, Message, []).
@@ -280,11 +283,30 @@ call(SvcName, App, Message) ->
     | fun()
     | maybe_improper_list(evaluable(), list()).
 
+-type sequence()
+   :: {'Unsigned32'(), 0..32}.
+
+-type restriction()
+   :: false
+    | node
+    | nodes
+    | [node()]
+    | evaluable().
+
+-type remotes()
+   :: boolean()
+    | [node()]
+    | evaluable().
+
 %% Options passed to start_service/2
 
 -type service_opt()
    :: capability()
-    | {application, [application_opt()]}.
+    | {application, [application_opt()]}
+    | {restrict_connections, restriction()}
+    | {sequence, sequence() | evaluable()}
+    | {share_peers, remotes()}
+    | {use_shared_peers, remotes()}.
 
 -type application_opt()
    :: {alias, app_alias()}
@@ -292,7 +314,8 @@ call(SvcName, App, Message) ->
     | {module, app_module()}
     | {state, any()}
     | {call_mutates_state, boolean()}
-    | {answer_errors, callback|report|discard}.
+    | {answer_errors, callback|report|discard}
+    | {request_errors, answer_3xxx|answer|callback}.
 
 -type app_alias()
    :: any().
@@ -316,8 +339,12 @@ call(SvcName, App, Message) ->
     | {applications, [app_alias()]}
     | {capabilities, [capability()]}
     | {capabilities_cb, evaluable()}
-    | {watchdog_timer, 'Unsigned32'() | {module(), atom(), list()}}
+    | {capx_timeout, 'Unsigned32'()}
+    | {disconnect_cb, evaluable()}
+    | {length_errors, exit | handle | discard}
     | {reconnect_timer, 'Unsigned32'()}
+    | {watchdog_timer, 'Unsigned32'() | {module(), atom(), list()}}
+    | {watchdog_config, [{okay|suspect, non_neg_integer()}]}
     | {private, any()}.
 
 %% Predicate passed to remove_transport/2

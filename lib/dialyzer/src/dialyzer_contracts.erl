@@ -254,13 +254,34 @@ check_extraneous([C|Cs], SuccType) ->
   end.
 
 check_extraneous_1(Contract, SuccType) ->
-  CRngs = erl_types:t_elements(erl_types:t_fun_range(Contract)),
+  CRng = erl_types:t_fun_range(Contract),
+  CRngs = erl_types:t_elements(CRng),
   STRng = erl_types:t_fun_range(SuccType),
   ?debug("CR = ~p\nSR = ~p\n", [CRngs, STRng]),
-  case [CR || CR <- CRngs, erl_types:t_is_none(erl_types:t_inf(CR, STRng, opaque))] of
-    [] -> ok;
+  case [CR || CR <- CRngs,
+              erl_types:t_is_none(erl_types:t_inf(CR, STRng, opaque))] of
+    [] ->
+      CRngList = list_part(CRng),
+      STRngList = list_part(STRng),
+      case is_not_nil_list(CRngList) andalso is_not_nil_list(STRngList) of
+        false -> ok;
+        true ->
+          CRngElements = erl_types:t_list_elements(CRngList),
+          STRngElements = erl_types:t_list_elements(STRngList),
+          Inf = erl_types:t_inf(CRngElements, STRngElements, opaque),
+          case erl_types:t_is_none(Inf) of
+            true -> {error, invalid_contract};
+            false -> ok
+          end
+      end;
     CRs -> {error, {extra_range, erl_types:t_sup(CRs), STRng}}
   end.
+
+list_part(Type) ->
+  erl_types:t_inf(erl_types:t_list(), Type, opaque).
+
+is_not_nil_list(Type) ->
+  erl_types:t_is_list(Type) andalso not erl_types:t_is_nil(Type).
 
 %% This is the heart of the "range function"
 -spec process_contracts([contract_pair()], [erl_types:erl_type()]) -> erl_types:erl_type().
@@ -499,6 +520,8 @@ get_invalid_contract_warnings_funs([{MFA, {FileLine, Contract}}|Left],
 	case check_contract(Contract, Sig) of
 	  {error, invalid_contract} ->
 	    [invalid_contract_warning(MFA, FileLine, Sig, RecDict)|Acc];
+	  {error, {overlapping_contract, []}} ->
+	    [overlapping_contract_warning(MFA, FileLine)|Acc];
 	  {error, {extra_range, ExtraRanges, STRange}} ->
 	    Warn =
 	      case t_from_forms_without_remote(Contract#contract.forms,
@@ -549,6 +572,9 @@ get_invalid_contract_warnings_funs([], _Plt, _RecDict, Acc) ->
 invalid_contract_warning({M, F, A}, FileLine, SuccType, RecDict) ->
   SuccTypeStr = dialyzer_utils:format_sig(SuccType, RecDict),
   {?WARN_CONTRACT_TYPES, FileLine, {invalid_contract, [M, F, A, SuccTypeStr]}}.
+
+overlapping_contract_warning({M, F, A}, FileLine) ->
+  {?WARN_CONTRACT_TYPES, FileLine, {overlapping_contract, [M, F, A]}}.
 
 extra_range_warning({M, F, A}, FileLine, ExtraRanges, STRange) ->
   ERangesStr = erl_types:t_to_string(ExtraRanges),

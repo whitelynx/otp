@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 1997-2012. All Rights Reserved.
+%% Copyright Ericsson AB 1997-2013. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -21,7 +21,7 @@
 
 -module(ts_run).
 
--export([run/4]).
+-export([run/4,ct_run_test/2]).
 
 -define(DEFAULT_MAKE_TIMETRAP_MINUTES, 60).
 -define(DEFAULT_UNMAKE_TIMETRAP_MINUTES, 15).
@@ -86,6 +86,24 @@ execute([Hook|Rest], Vars0, Spec0, St0) ->
     end;
 execute([], Vars, Spec, St) ->
     {ok, Vars, Spec, St}.
+
+%% Wrapper to run tests using ct:run_test/1 and handle any errors.
+
+ct_run_test(Dir, CommonTestArgs) ->
+    try
+	ok = file:set_cwd(Dir),
+	case ct:run_test(CommonTestArgs) of
+	    {_,_,_} ->
+		ok;
+	    {error,Error} ->
+		io:format("ERROR: ~P\n", [Error,20]);
+	    Other ->
+		io:format("~P\n", [Other,20])
+	end
+    catch
+	_:Crash ->
+	    io:format("CRASH: ~P\n", [Crash,20])
+    end.
 
 %%
 %% Deletes File from Files when File is on the form .../<SUITE>_data/<file>
@@ -230,8 +248,7 @@ make_command(Vars, Spec, State) ->
 	   " -boot start_sasl -sasl errlog_type error",
 	   " -pz \"",Cwd,"\"",
 	   " -ct_test_vars ",TestVars,
-	   " -eval \"file:set_cwd(\\\"",TestDir,"\\\")\" "
-	   " -eval \"ct:run_test(", 
+	   " -eval \"ts_run:ct_run_test(\\\"",TestDir,"\\\", ",
 	   backslashify(lists:flatten(State#state.test_server_args)),")\""
 	   " ",
 	   ExtraArgs],
@@ -244,13 +261,17 @@ run_batch(Vars, _Spec, State) ->
     ts_lib:progress(Vars, 1, "Command: ~s~n", [Command]),
     io:format(user, "Command: ~s~n",[Command]),
     Port = open_port({spawn, Command}, [stream, in, eof]),
-    tricky_print_data(Port).
+    Timeout = 30000 * case os:getenv("TS_RUN_VALGRIND") of
+			  false -> 1;
+			  _ -> 100
+		      end,
+    tricky_print_data(Port, Timeout).
 
-tricky_print_data(Port) ->
+tricky_print_data(Port, Timeout) ->
     receive
 	{Port, {data, Bytes}} ->
 	    io:put_chars(Bytes),
-	    tricky_print_data(Port);
+	    tricky_print_data(Port, Timeout);
 	{Port, eof} ->
 	    Port ! {self(), close}, 
 	    receive
@@ -263,7 +284,7 @@ tricky_print_data(Port) ->
 	    after 1 ->				% force context switch
 		    ok
 	    end
-    after 30000 ->
+    after Timeout ->
 	    case erl_epmd:names() of
 		{ok,Names} ->
 		    case is_testnode_dead(Names) of
@@ -271,10 +292,10 @@ tricky_print_data(Port) ->
 			    io:put_chars("WARNING: No EOF, but "
 					 "test_server node is down!\n");
 			false ->
-			    tricky_print_data(Port)
+			    tricky_print_data(Port, Timeout)
 		    end;
 		_ ->
-		    tricky_print_data(Port)
+		    tricky_print_data(Port, Timeout)
 	    end
     end.
 
@@ -351,7 +372,7 @@ make_common_test_args(Args0, Options0, _Vars) ->
 		io:format("No cover file found for ~p~n",[App]),
 		[];
 	    {value,{cover,_App,File,_Analyse}} -> 
-		[{cover,to_list(File)}];
+		[{cover,to_list(File)},{cover_stop,false}];
 	    false -> 
 		[]
 	end,
@@ -363,13 +384,7 @@ make_common_test_args(Args0, Options0, _Vars) ->
 		      [{logdir,"../test_server"}]
 	     end,
 
-    TimeTrap = case test_server:timetrap_scale_factor() of
-		   1 ->
-		       [];
-		   Scale ->
-		       [{multiply_timetraps, Scale},
-			{scale_timetraps, true}]
-	       end,
+    TimeTrap = [{scale_timetraps, true}],
 
     {ConfigPath,
      Options} = case {os:getenv("TEST_CONFIG_PATH"),

@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2007-2012. All Rights Reserved.
+%% Copyright Ericsson AB 2007-2013. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -26,6 +26,7 @@
 	 errors/1,
 	 strange_name/1,
 	 emulator_flags/1,
+	 emulator_flags_no_shebang/1,
 	 module_script/1,
 	 beam_script/1,
 	 archive_script/1,
@@ -34,7 +35,8 @@
 	 create_and_extract/1,
 	 foldl/1,
 	 overflow/1,
-	 verify_sections/3
+	 verify_sections/3,
+         unicode/1
 	]).
 
 -include_lib("test_server/include/test_server.hrl").
@@ -44,9 +46,10 @@ suite() -> [{ct_hooks,[ts_install_cth]}].
 
 all() -> 
     [basic, errors, strange_name, emulator_flags,
+     emulator_flags_no_shebang,
      module_script, beam_script, archive_script, epp,
      create_and_extract, foldl, overflow,
-     archive_script_file_access].
+     archive_script_file_access, unicode].
 
 groups() -> 
     [].
@@ -64,7 +67,7 @@ end_per_group(_GroupName, Config) ->
     Config.
 
 init_per_testcase(_Case, Config) ->
-    ?line Dog = ?t:timetrap(?t:minutes(2)),
+    ?line Dog = ?t:timetrap(?t:minutes(5)),
     [{watchdog,Dog}|Config].
 
 end_per_testcase(_Case, Config) ->
@@ -140,6 +143,21 @@ emulator_flags(Config) when is_list(Config) ->
     Data = ?config(data_dir, Config),
     Dir = filename:absname(Data),		%Get rid of trailing slash.
     ?line run(Dir, "emulator_flags -arg1 arg2 arg3",
+	      [<<"main:[\"-arg1\",\"arg2\",\"arg3\"]\n"
+		"nostick:[{nostick,[]}]\n"
+		"mnesia:[{mnesia,[\"dir\",\"a/directory\"]},{mnesia,[\"debug\",\"verbose\"]}]\n"
+		"ERL_FLAGS=false\n"
+		"unknown:[]\n"
+		"ExitCode:0">>]),
+    ok.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+emulator_flags_no_shebang(Config) when is_list(Config) ->
+    Data = ?config(data_dir, Config),
+    Dir = filename:absname(Data),		%Get rid of trailing slash.
+    %% Need run_with_opts, to always use "escript" explicitly
+    ?line run_with_opts(Dir, "", "emulator_flags_no_shebang -arg1 arg2 arg3",
 	      [<<"main:[\"-arg1\",\"arg2\",\"arg3\"]\n"
 		"nostick:[{nostick,[]}]\n"
 		"mnesia:[{mnesia,[\"dir\",\"a/directory\"]},{mnesia,[\"debug\",\"verbose\"]}]\n"
@@ -618,7 +636,7 @@ compile_files([File | Files], SrcDir, OutDir) ->
     case filename:extension(File) of
 	".erl" ->
 	    AbsFile = filename:join([SrcDir, File]),
-	    case compile:file(AbsFile, [{outdir, OutDir}]) of
+	    case compile:file(AbsFile, [{outdir, OutDir},report_errors]) of
 		{ok, _Mod} ->
 		    compile_files(Files, SrcDir, OutDir);
 		Error ->
@@ -810,6 +828,8 @@ normalize_sections(Sections) ->
 	end.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+
+
 foldl(Config) when is_list(Config) ->
     {NewFile, _FileInfo,
      _EmuArg, _Source,
@@ -886,6 +906,23 @@ emulate_escript_foldl(Fun, Acc, File) ->
 	{error, Reason} ->
 	    {error, Reason}
     end.
+
+unicode(Config) when is_list(Config) ->
+    Data = ?config(data_dir, Config),
+    Dir = filename:absname(Data),		%Get rid of trailing slash.
+    run(Dir, "unicode1",
+        [<<"escript: exception error: an error occurred when evaluating"
+           " an arithmetic expression\n  in operator  '/'/2\n     "
+           "called as <<224,170,170>> / <<224,170,170>>\nExitCode:127">>]),
+    run(Dir, "unicode2",
+        [<<"escript: exception error: an error occurred when evaluating"
+           " an arithmetic expression\n  in operator  '/'/2\n     "
+           "called as <<\"\xaa\">> / <<\"\xaa\">>\nExitCode:127">>]),
+    run(Dir, "unicode3", [<<"ExitCode:0">>]),
+    run(Dir, "unicode4", [<<"ExitCode:0">>]),
+    run(Dir, "unicode5", [<<"ExitCode:0">>]),
+    run(Dir, "unicode6", [<<"ExitCode:0">>]),
+    ok.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 

@@ -1,7 +1,7 @@
 #
 # %CopyrightBegin%
 #
-# Copyright Ericsson AB 2002-2012. All Rights Reserved.
+# Copyright Ericsson AB 2002-2013. All Rights Reserved.
 #
 # The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
@@ -102,7 +102,8 @@ APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 ERL_COMPILE_FLAGS += \
 	-I../include \
 	-I ../../et/include \
-	-I ../../../libraries/et/include
+	-I ../../../libraries/et/include \
+	-Werror
 
 # ----------------------------------------------------
 # Targets
@@ -114,10 +115,10 @@ clean:
 	rm -f errs core *~
 
 $(APP_TARGET): $(APP_SRC) ../vsn.mk
-	sed -e 's;%VSN%;$(VSN);' $< > $@
+	$(vsn_verbose)sed -e 's;%VSN%;$(VSN);' $< > $@
 
 $(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
-	sed -e 's;%VSN%;$(VSN);' $< > $@
+	$(vsn_verbose)sed -e 's;%VSN%;$(VSN);' $< > $@
 
 $(TARGET_FILES): $(INTERNAL_HRL_FILES)
 

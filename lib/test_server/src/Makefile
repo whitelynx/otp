@@ -1,7 +1,7 @@
 #
 # %CopyrightBegin%
 #
-# Copyright Ericsson AB 1996-2012. All Rights Reserved.
+# Copyright Ericsson AB 1996-2013. All Rights Reserved.
 #
 # The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
@@ -40,6 +40,8 @@ RELSYSDIR = $(RELEASE_PATH)/lib/test_server-$(VSN)
 # ----------------------------------------------------
 
 MODULES= test_server_ctrl \
+	 test_server_gl \
+	 test_server_io \
 	 test_server_node \
 	 test_server \
 	 test_server_sup \
@@ -49,7 +51,6 @@ MODULES= test_server_ctrl \
 TS_MODULES= \
 	ts \
 	ts_run \
-	ts_reports \
 	ts_lib \
 	ts_make \
 	ts_erl_config \
@@ -68,7 +69,6 @@ INTERNAL_HRL_FILES = test_server_internal.hrl
 TS_HRL_FILES= ts.hrl
 C_FILES = 
 AUTOCONF_FILES = configure.in conf_vars.in
-COVER_FILES = cross.cover
 PROGRAMS = configure config.sub config.guess install-sh 
 CONFIG = ts.config ts.unix.config ts.win32.config
 
@@ -91,7 +91,7 @@ APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_COMPILE_FLAGS += -I../include
+ERL_COMPILE_FLAGS += -I../include -Werror
 
 # ----------------------------------------------------
 # Targets
@@ -112,10 +112,10 @@ configure: configure.in
 # Special Build Targets
 # ----------------------------------------------------
 $(APP_TARGET): $(APP_SRC) ../vsn.mk
-	sed -e 's;%VSN%;$(VSN);' $< > $@
+	$(vsn_verbose)sed -e 's;%VSN%;$(VSN);' $< > $@
 
 $(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
-	sed -e 's;%VSN%;$(VSN);' $< > $@
+	$(vsn_verbose)sed -e 's;%VSN%;$(VSN);' $< > $@
 
 # ----------------------------------------------------
 # Release Target
@@ -136,7 +136,7 @@ release_tests_spec: opt
 	$(INSTALL_DATA) $(ERL_FILES) $(TS_ERL_FILES) \
 		$(HRL_FILES) $(INTERNAL_HRL_FILES) $(TS_HRL_FILES) \
 		$(TS_TARGET_FILES) \
-		$(AUTOCONF_FILES) $(C_FILES) $(COVER_FILES) $(CONFIG) \
+		$(AUTOCONF_FILES) $(C_FILES) $(CONFIG) \
 		"$(RELEASE_PATH)/test_server"
 	$(INSTALL_SCRIPT) $(PROGRAMS) "$(RELEASE_PATH)/test_server"
 

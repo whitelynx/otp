@@ -1,7 +1,7 @@
 /*
  * %CopyrightBegin%
  *
- * Copyright Ericsson AB 1996-2012. All Rights Reserved.
+ * Copyright Ericsson AB 1996-2013. All Rights Reserved.
  *
  * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
@@ -46,6 +46,7 @@
 #include "erl_thr_queue.h"
 #include "erl_sched_spec_pre_alloc.h"
 #include "beam_bp.h"
+#include "erl_ptab.h"
 
 #undef M_TRIM_THRESHOLD
 #undef M_TOP_PAD
@@ -370,7 +371,7 @@ Eterm
 erts_bld_atom(Uint **hpp, Uint *szp, char *str)
 {
     if (hpp)
-	return am_atom_put(str, sys_strlen(str));
+	return erts_atom_put((byte *) str, sys_strlen(str), ERTS_ATOM_ENC_LATIN1, 1);
     else
 	return THE_NON_VALUE;
 }
@@ -2712,25 +2713,26 @@ tailrecur_ne:
 	case SMALL_FLOAT:
 	    GET_DOUBLE(bw, f2);
 	    if (f2.fd < MAX_LOSSLESS_FLOAT && f2.fd > MIN_LOSSLESS_FLOAT) {
-		// Float is within the no loss limit
+		/* Float is within the no loss limit */
 		f1.fd = signed_val(aw);
 		j = float_comp(f1.fd, f2.fd);
 #if ERTS_SIZEOF_ETERM == 8
 	    } else if (f2.fd > (double) (MAX_SMALL + 1)) {
-		// Float is a positive bignum, i.e. bigger
+		/* Float is a positive bignum, i.e. bigger */
 		j = -1;
 	    } else if (f2.fd < (double) (MIN_SMALL - 1)) {
-		// Float is a negative bignum, i.e. smaller
+		/* Float is a negative bignum, i.e. smaller */
 		j = 1;
-	    } else { // Float is a Sint but less precise
+	    } else {
+		/* Float is a Sint but less precise */
 		j = signed_val(aw) - (Sint) f2.fd;
 	    }
 #else
 	    } else {
-		// If float is positive it is bigger than small
+		/* If float is positive it is bigger than small */
 		j = (f2.fd > 0.0) ? -1 : 1;
 	    }
-#endif // ERTS_SIZEOF_ETERM == 8
+#endif /* ERTS_SIZEOF_ETERM == 8 */
 	    break;
         case FLOAT_BIG:
 	{
@@ -2742,18 +2744,18 @@ tailrecur_ne:
 	    GET_DOUBLE(bw, f2);
 	    if ((f2.fd < (double) (MAX_SMALL + 1))
 		    && (f2.fd > (double) (MIN_SMALL - 1))) {
-		// Float is a Sint
+		/* Float is a Sint */
 		j = big_sign(aw) ? -1 : 1;
 	    } else if (big_arity(aw) > BIG_ARITY_FLOAT_MAX
 		       || pow(2.0,(big_arity(aw)-1)*D_EXP) > fabs(f2.fd)) {
-		// If bignum size shows that it is bigger than the abs float
+		/* If bignum size shows that it is bigger than the abs float */
 		j = big_sign(aw) ? -1 : 1;
 	    } else if (big_arity(aw) < BIG_ARITY_FLOAT_MAX
 		       && (pow(2.0,(big_arity(aw))*D_EXP)-1.0) < fabs(f2.fd)) {
-		// If bignum size shows that it is smaller than the abs float
+		/* If bignum size shows that it is smaller than the abs float */
 		j = f2.fd < 0 ? 1 : -1;
 	    } else if (f2.fd < MAX_LOSSLESS_FLOAT && f2.fd > MIN_LOSSLESS_FLOAT) {
-		// Float is within the no loss limit
+		/* Float is within the no loss limit */
 		if (big_to_double(aw, &f1.fd) < 0) {
 		    j = big_sign(aw) ? -1 : 1;
 		} else {
@@ -2770,25 +2772,26 @@ tailrecur_ne:
 	case FLOAT_SMALL:
 	    GET_DOUBLE(aw, f1);
 	    if (f1.fd < MAX_LOSSLESS_FLOAT && f1.fd > MIN_LOSSLESS_FLOAT) {
-		// Float is within the no loss limit
+		/* Float is within the no loss limit */
 		f2.fd = signed_val(bw);
 		j = float_comp(f1.fd, f2.fd);
 #if ERTS_SIZEOF_ETERM == 8
 	    } else if (f1.fd > (double) (MAX_SMALL + 1)) {
-		// Float is a positive bignum, i.e. bigger
+		/* Float is a positive bignum, i.e. bigger */
 		j = 1;
 	    } else if (f1.fd < (double) (MIN_SMALL - 1)) {
-		// Float is a negative bignum, i.e. smaller
+		/* Float is a negative bignum, i.e. smaller */
 		j = -1;
-	    } else { // Float is a Sint but less precise it
+	    } else {
+		/* Float is a Sint but less precise it */
 		j = (Sint) f1.fd - signed_val(bw);
 	    }
 #else
 	    } else {
-		// If float is positive it is bigger than small
+		/* If float is positive it is bigger than small */
 		j = (f1.fd > 0.0) ? 1 : -1;
 	    }
-#endif // ERTS_SIZEOF_ETERM == 8
+#endif /* ERTS_SIZEOF_ETERM == 8 */
 	    break;
 	default:
 	    j = b_tag - a_tag;
@@ -3016,12 +3019,13 @@ buf_to_intlist(Eterm** hpp, char *buf, size_t len, Eterm tail)
 **        ;
 ** 
 ** Return remaining bytes in buffer on success
-**        -1 on overflow
-**        -2 on type error (including that result would not be a whole number of bytes)
+**        ERTS_IOLIST_TO_BUF_OVERFLOW on overflow
+**        ERTS_IOLIST_TO_BUF_TYPE_ERROR on type error (including that result would not be a whole number of bytes)
 */
 
-int io_list_to_buf(Eterm obj, char* buf, int len)
+ErlDrvSizeT erts_iolist_to_buf(Eterm obj, char* buf, ErlDrvSizeT alloced_len)
 {
+    ErlDrvSizeT len = (ErlDrvSizeT) alloced_len;
     Eterm* objp;
     DECLARE_ESTACK(s);
     goto L_again;
@@ -3114,20 +3118,20 @@ int io_list_to_buf(Eterm obj, char* buf, int len)
 
  L_type_error:
     DESTROY_ESTACK(s);
-    return -2;
+    return ERTS_IOLIST_TO_BUF_TYPE_ERROR;
 
  L_overflow:
     DESTROY_ESTACK(s);
-    return -1;
+    return ERTS_IOLIST_TO_BUF_OVERFLOW;
 }
 
 /*
  * Return 0 if successful, and non-zero if unsuccessful.
  */
-int erts_iolist_size(Eterm obj, Uint* sizep)
+int erts_iolist_size(Eterm obj, ErlDrvSizeT* sizep)
 {
     Eterm* objp;
-    Uint size = 0;
+    Uint size = 0; /* Intentionally Uint due to halfword heap */
     DECLARE_ESTACK(s);
     goto L_again;
 
@@ -3179,7 +3183,7 @@ int erts_iolist_size(Eterm obj, Uint* sizep)
 #undef SAFE_ADD
 
     DESTROY_ESTACK(s);
-    *sizep = size;
+    *sizep = (ErlDrvSizeT) size;
     return ERTS_IOLIST_OK;
 
  L_overflow_error:

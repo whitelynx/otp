@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2009-2012. All Rights Reserved.
+%% Copyright Ericsson AB 2009-2013. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -479,7 +479,7 @@ multiple_specs(_Config) ->
 					      "multiple_specs.1.spec"),
     SpecFile2 = ct_test_support:write_testspec(Spec2,SpecDir,
 					      "multiple_specs.2.spec"),
-    FileResult = ct_testspec:collect_tests_from_file([SpecFile1,SpecFile2],
+    FileResult = ct_testspec:collect_tests_from_file([[SpecFile1,SpecFile2]],
 						     false),
     ct:pal("TESTSPEC RECORD FROM FILE:~n~p~n", [rec2proplist(FileResult)]),
     
@@ -490,7 +490,7 @@ multiple_specs(_Config) ->
 	    [{Node2,get_absdir(filename:join(SpecDir,CfgDir))} || CfgDir <- CfgDir2]],
     LogDirV = get_absdir(filename:join(SpecDir,"../logs")),
 
-    Verify = #testspec{merge_tests = false,
+    Verify = #testspec{merge_tests = true,
 		       spec_dir = SpecDir,
 		       nodes = [{undefined,Node},{n1,Node1},{n2,Node2}],
 		       alias = [{to1,TO1V},{to2,TO2V}],
@@ -500,22 +500,13 @@ multiple_specs(_Config) ->
 		       logdir = [{Node,LogDirV},{Node1,LogDirV},{Node2,LogDirV},"."],
 		       config = CFGs,
 		       tests = [{{Node1,TO1V},
-				 [{x_SUITE,[all]}]},
-				{{Node1,TO1V},
-				 [{y_SUITE,[{g1,all},{g2,all}]}]},
-				{{Node1,TO1V},
-				 [{y_SUITE,[tc1,tc2]}]},
-				{{Node1,TO1V},
-				 [{z_SUITE,[{all,{skip,"skipped"}}]}]},
+				 [{x_SUITE,[all]},
+				  {y_SUITE,[{g1,all},{g2,all},tc1,tc2]},
+				  {z_SUITE,[{all,{skip,"skipped"}}]}]},
 				{{Node2,TO2V},
-				 [{x_SUITE,[all]}]},
-				{{Node2,TO2V},
-				 [{y_SUITE,[all]}]},
-				{{Node2,TO2V},
-				 [{x_SUITE,[{{g1,all},{skip,"skipped"}},
-					    {{g2,all},{skip,"skipped"}}]}]},
-				{{Node2,TO2V},
-				 [{y_SUITE,[{tc1,{skip,"skipped"}},
+				 [{x_SUITE,[all,{{g1,all},{skip,"skipped"}},
+					    {{g2,all},{skip,"skipped"}}]},
+				  {y_SUITE,[all,{tc1,{skip,"skipped"}},
 					    {tc2,{skip,"skipped"}}]}]}]},
 		       
     verify_result(Verify,FileResult,FileResult).
@@ -524,7 +515,7 @@ multiple_specs(_Config) ->
 %%% 
 misc_config_terms(_Config) ->
     CfgDir = "../cfgs/to1",
-
+    TODir = "../tests/to1",
     Spec =
 	[{node,x,n1@h1},{node,y,n2@h2},
 
@@ -554,7 +545,9 @@ misc_config_terms(_Config) ->
 
 	 {create_priv_dir,[auto_per_tc]},
 	 {create_priv_dir,n1@h1,[manual_per_tc]},
-	 {create_priv_dir,n2@h2,[auto_per_run]}
+	 {create_priv_dir,n2@h2,[auto_per_run]},
+
+	 {suites,n1@h1,TODir,[x_SUITE]}
 	],
     
     {ok,SpecDir} = file:get_cwd(),
@@ -599,7 +592,9 @@ misc_config_terms(_Config) ->
 				     {n2@h2,CSS2}],	       
 		       create_priv_dir = [{Node,[auto_per_tc]},
 					  {n1@h1,[manual_per_tc]},
-					  {n2@h2,[auto_per_run]}]
+					  {n2@h2,[auto_per_run]}],
+		       tests = [{{n1@h1,get_absdir(filename:join(SpecDir,TODir))},
+				 [{x_SUITE,[all]}]}]
 		      },
     
     verify_result(Verify,ListResult,FileResult).
@@ -688,10 +683,10 @@ define_names_1(_Config) ->
 %%% HELP FUNCTIONS
 %%%-----------------------------------------------------------------
 
-verify_result(Verify,ListResult,FileResult) ->
+verify_result(VerificationRec,ListResult,FileResult) ->
     {_,TSLTuples} = rec2proplist(ListResult),
     {_,TSFTuples} = rec2proplist(FileResult),
-    {_,VTuples} = rec2proplist(Verify),    
+    {_,VTuples} = rec2proplist(VerificationRec),    
     VResult =
 	(catch lists:foldl(fun({Tag,Val},{[{Tag,Val}|TSL],[{Tag,Val}|TSF]}) ->
 				   {TSL,TSF};
@@ -720,6 +715,8 @@ read_config(S) ->
 
 rec2proplist(E={error,_What}) ->
     exit({invalid_testspec_record,E});
+rec2proplist([{Specs,Rec}]) when is_list(Specs) ->
+    rec2proplist(Rec);
 rec2proplist(Rec) ->
     [RecName|RecList] = tuple_to_list(Rec),
     FieldNames = 

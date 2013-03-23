@@ -43,8 +43,12 @@
 %% there will be clashes with logging processes etc).
 %%--------------------------------------------------------------------
 init_per_suite(Config) ->
-    Config1 = ct_test_support:init_per_suite(Config),
-    Config1.
+    case application:load(crypto) of
+	{error,Reason} when Reason=/={already_loaded,crypto} ->
+	    {skip, Reason};
+	_ ->
+	    ct_test_support:init_per_suite(Config)
+    end.
 
 end_per_suite(Config) ->
     ct_test_support:end_per_suite(Config).
@@ -108,7 +112,7 @@ reformat(Events, EH) ->
 %%%-----------------------------------------------------------------
 %%% TEST EVENTS
 %%%-----------------------------------------------------------------
-events_to_check(Test,Config) ->
+events_to_check(default,Config) ->
     {module,_} = code:load_abs(filename:join(?config(data_dir,Config),
 					     netconfc1_SUITE)),
     TCs = netconfc1_SUITE:all(),

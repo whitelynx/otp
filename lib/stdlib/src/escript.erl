@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2007-2012. All Rights Reserved.
+%% Copyright Ericsson AB 2007-2013. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -602,9 +602,15 @@ parse_beam(S, File, HeaderSz, CheckOnly) ->
 parse_source(S, File, Fd, StartLine, HeaderSz, CheckOnly) ->
     {PreDefMacros, Module} = pre_def_macros(File),
     IncludePath = [],
-    {ok, _} = file:position(Fd, {bof, HeaderSz}),
+    %% Read the encoding on the second line, if there is any:
+    {ok, _} = file:position(Fd, 0),
+    _ = io:get_line(Fd, ''),
+    Encoding = epp:set_encoding(Fd),
+    {ok, _} = file:position(Fd, HeaderSz),
     case epp:open(File, Fd, StartLine, IncludePath, PreDefMacros) of
         {ok, Epp} ->
+            _ = [io:setopts(Fd, [{encoding,Encoding}]) ||
+                    Encoding =/= none],
             {ok, FileForm} = epp:parse_erl_form(Epp),
             OptModRes = epp:parse_erl_form(Epp),
             S2 = S#state{source = text, module = Module},
@@ -624,7 +630,7 @@ parse_source(S, File, Fd, StartLine, HeaderSz, CheckOnly) ->
             ok = file:close(Fd),
 	    check_source(S3, CheckOnly);
 	{error, Reason} ->
-	    io:format("escript: ~p\n", [Reason]),
+	    io:format("escript: ~tp\n", [Reason]),
 	    fatal("Preprocessor error")
     end.
 
@@ -694,7 +700,7 @@ epp_parse_file2(Epp, S, Forms, Parsed) ->
                             epp_parse_file(Epp, S2, [Form | Forms]);
                         true ->
                             Args = lists:flatten(io_lib:format("illegal mode attribute: ~p", [NewMode])),
-                            io:format("~s:~w ~s\n", [S#state.file,Ln,Args]),
+                            io:format("~ts:~w ~s\n", [S#state.file,Ln,Args]),
                             Error = {error,{Ln,erl_parse,Args}},
                             Nerrs= S#state.n_errors + 1,
                             epp_parse_file(Epp, S2#state{n_errors = Nerrs}, [Error | Forms])
@@ -710,7 +716,7 @@ epp_parse_file2(Epp, S, Forms, Parsed) ->
                     epp_parse_file(Epp, S, [Form | Forms])
             end;
         {error,{Ln,Mod,Args}} = Form ->
-            io:format("~s:~w: ~s\n",
+            io:format("~ts:~w: ~ts\n",
                       [S#state.file,Ln,Mod:format_error(Args)]),
             epp_parse_file(Epp, S#state{n_errors = S#state.n_errors + 1}, [Form | Forms]);
         {eof, _LastLine} = Eof ->
@@ -780,10 +786,10 @@ report_errors(Errors) ->
                   Errors).
 
 list_errors(F, [{Line,Mod,E}|Es]) ->
-    io:fwrite("~s:~w: ~s\n", [F,Line,Mod:format_error(E)]),
+    io:fwrite("~ts:~w: ~ts\n", [F,Line,Mod:format_error(E)]),
     list_errors(F, Es);
 list_errors(F, [{Mod,E}|Es]) ->
-    io:fwrite("~s: ~s\n", [F,Mod:format_error(E)]),
+    io:fwrite("~ts: ~ts\n", [F,Mod:format_error(E)]),
     list_errors(F, Es);
 list_errors(_F, []) -> ok.
 
@@ -795,10 +801,10 @@ report_warnings(Ws0) ->
     lists:foreach(fun({_,Str}) -> io:put_chars(Str) end, Ws).
 
 format_message(F, [{Line,Mod,E}|Es]) ->
-    M = {{F,Line},io_lib:format("~s:~w: Warning: ~s\n", [F,Line,Mod:format_error(E)])},
+    M = {{F,Line},io_lib:format("~ts:~w: Warning: ~ts\n", [F,Line,Mod:format_error(E)])},
     [M|format_message(F, Es)];
 format_message(F, [{Mod,E}|Es]) ->
-    M = {none,io_lib:format("~s: Warning: ~s\n", [F,Mod:format_error(E)])},
+    M = {none,io_lib:format("~ts: Warning: ~ts\n", [F,Mod:format_error(E)])},
     [M|format_message(F, Es)];
 format_message(_, []) -> [].
 
@@ -851,12 +857,27 @@ eval_exprs([E|Es], Bs0, Lf, Ef, RBs) ->
     eval_exprs(Es, Bs, Lf, Ef, RBs).
 
 format_exception(Class, Reason) ->
+    Enc = encoding(),
+    P = case Enc of
+            latin1 -> "P";
+            _ -> "tP"
+        end,
     PF = fun(Term, I) ->
-                 io_lib:format("~." ++ integer_to_list(I) ++ "P", [Term, 50])
+                 io_lib:format("~." ++ integer_to_list(I) ++ P, [Term, 50])
          end,
     StackTrace = erlang:get_stacktrace(),
     StackFun = fun(M, _F, _A) -> (M =:= erl_eval) or (M =:= ?MODULE) end,
-    lib:format_exception(1, Class, Reason, StackTrace, StackFun, PF).
+    lib:format_exception(1, Class, Reason, StackTrace, StackFun, PF, Enc).
+
+encoding() ->
+    [{encoding, Encoding}] = enc(),
+    Encoding.
+
+enc() ->
+    case lists:keyfind(encoding, 1, io:getopts()) of
+        false -> [{encoding,latin1}]; % should never happen
+        Enc -> [Enc]
+    end.
 
 fatal(Str) ->
     throw(Str).

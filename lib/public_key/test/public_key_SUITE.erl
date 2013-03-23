@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2008-2012. All Rights Reserved.
+%% Copyright Ericsson AB 2008-2013. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -20,85 +20,19 @@
 %%
 -module(public_key_SUITE).
 
+-include_lib("common_test/include/ct.hrl").
+-include_lib("public_key/include/public_key.hrl").
+
 %% Note: This directive should only be used in test suites.
 -compile(export_all).
 
-%%-include_lib("common_test/include/ct.hrl").
--include_lib("test_server/include/test_server.hrl").
-
--include_lib("public_key/include/public_key.hrl").
-
 -define(TIMEOUT, 120000). % 2 min
 
-%% Test server callback functions
-%%--------------------------------------------------------------------
-%% Function: init_per_suite(Config) -> Config
-%% Config - [tuple()]
-%%   A list of key/value pairs, holding the test case configuration.
-%% Description: Initialization before the whole suite
-%%
-%% Note: This function is free to add any key/value pairs to the Config
-%% variable, but should NOT alter/remove any existing entries.
-%%--------------------------------------------------------------------
-init_per_suite(Config) ->
-    try crypto:start() of
-	ok ->
-	    Config
-    catch _:_ ->
-	    {skip, "Crypto did not start"}
-    end.
-%%--------------------------------------------------------------------
-%% Function: end_per_suite(Config) -> _
-%% Config - [tuple()]
-%%   A list of key/value pairs, holding the test case configuration.
-%% Description: Cleanup after the whole suite
-%%--------------------------------------------------------------------
-end_per_suite(_Config) ->
-    application:stop(crypto).
 
 %%--------------------------------------------------------------------
-%% Function: init_per_testcase(TestCase, Config) -> Config
-%% Case - atom()
-%%   Name of the test case that is about to be run.
-%% Config - [tuple()]
-%%   A list of key/value pairs, holding the test case configuration.
-%%
-%% Description: Initialization before each test case
-%%
-%% Note: This function is free to add any key/value pairs to the Config
-%% variable, but should NOT alter/remove any existing entries.
-%% Description: Initialization before each test case
+%% Common Test interface functions -----------------------------------
 %%--------------------------------------------------------------------
-init_per_testcase(_TestCase, Config0) ->
-    Config = lists:keydelete(watchdog, 1, Config0),
-    Dog = test_server:timetrap(?TIMEOUT),
-    [{watchdog, Dog} | Config].
 
-%%--------------------------------------------------------------------
-%% Function: end_per_testcase(TestCase, Config) -> _
-%% Case - atom()
-%%   Name of the test case that is about to be run.
-%% Config - [tuple()]
-%%   A list of key/value pairs, holding the test case configuration.
-%% Description: Cleanup after each test case
-%%--------------------------------------------------------------------
-end_per_testcase(_TestCase, Config) ->
-    Dog = ?config(watchdog, Config),
-    case Dog of 
-	undefined ->
-	    ok;
-	_ ->
-	    test_server:timetrap_cancel(Dog)
-    end.
-
-%%--------------------------------------------------------------------
-%% Function: all(Clause) -> TestCases
-%% Clause - atom() - suite | doc
-%% TestCases - [Case] 
-%% Case - atom()
-%%   Name of a test case.
-%% Description: Returns a list of all test cases in this test suite
-%%--------------------------------------------------------------------
 suite() -> [{ct_hooks,[ts_install_cth]}].
 
 all() -> 
@@ -107,11 +41,12 @@ all() ->
      {group, ssh_public_key_decode_encode},
      encrypt_decrypt,
      {group, sign_verify},
-     pkix, pkix_countryname, pkix_path_validation].
+     pkix, pkix_countryname, pkix_path_validation,
+     pkix_iso_rsa_oid, pkix_iso_dsa_oid].
 
 groups() -> 
     [{pem_decode_encode, [], [dsa_pem, rsa_pem, encrypted_pem,
-			      dh_pem, cert_pem]},
+			      dh_pem, cert_pem, pkcs10_pem]},
      {ssh_public_key_decode_encode, [],
       [ssh_rsa_public_key, ssh_dsa_public_key, ssh_rfc4716_rsa_comment,
        ssh_rfc4716_dsa_comment, ssh_rfc4716_rsa_subject, ssh_known_hosts,
@@ -119,30 +54,46 @@ groups() ->
        ssh_openssh_public_key_long_header]},
      {sign_verify, [], [rsa_sign_verify, dsa_sign_verify]}
     ].
+%%-------------------------------------------------------------------
+init_per_suite(Config) ->
+    try crypto:start() of
+	ok ->
+	    Config
+    catch _:_ ->
+	    {skip, "Crypto did not start"}
+    end.
 
+end_per_suite(_Config) ->
+    application:stop(crypto).
+
+%%-------------------------------------------------------------------
 init_per_group(_GroupName, Config) ->
     Config.
 
 end_per_group(_GroupName, Config) ->
     Config.
+%%-------------------------------------------------------------------
+init_per_testcase(_TestCase, Config0) ->
+    Config = lists:keydelete(watchdog, 1, Config0),
+    Dog = ct:timetrap(?TIMEOUT),
+    [{watchdog, Dog} | Config].
 
 
-%% Test cases starts here.
+end_per_testcase(_TestCase, _Config) ->
+    ok.
+%%--------------------------------------------------------------------
+%% Test Cases --------------------------------------------------------
 %%--------------------------------------------------------------------
 
-app(doc) ->
-    "Test that the public_key app file is ok";
-app(suite) ->
-    [];
+app() ->
+    [{doc, "Test that the public_key app file is ok"}].
 app(Config) when is_list(Config) ->
-    ok = test_server:app_test(public_key).
+    ok = ?t:app_test(public_key).
 
 %%--------------------------------------------------------------------
 
-dsa_pem(doc) ->
-    [""];
-dsa_pem(suite) ->
-    [];
+dsa_pem() ->
+    [{doc, "DSA PEM-file decode/encode"}].
 dsa_pem(Config) when is_list(Config) ->
     Datadir = ?config(data_dir, Config),
 
@@ -164,10 +115,8 @@ dsa_pem(Config) when is_list(Config) ->
 
 %%--------------------------------------------------------------------
 
-rsa_pem(doc) ->
-    [""];
-rsa_pem(suite) ->
-    [];
+rsa_pem() ->
+    [{doc, "RSA PEM-file decode/encode"}].
 rsa_pem(Config) when is_list(Config) ->
     Datadir = ?config(data_dir, Config),
     [{'RSAPrivateKey', DerRSAKey, not_encrypted} =  Entry0 ] =
@@ -201,10 +150,8 @@ rsa_pem(Config) when is_list(Config) ->
 
 %%--------------------------------------------------------------------
 
-encrypted_pem(doc) ->
-    [""];
-encrypted_pem(suite) ->
-    [];
+encrypted_pem() ->
+    [{doc, "Encrypted PEM-file decode/encode"}].
 encrypted_pem(Config) when is_list(Config) ->
     Datadir = ?config(data_dir, Config),
 
@@ -234,10 +181,8 @@ encrypted_pem(Config) when is_list(Config) ->
     
 %%--------------------------------------------------------------------
 
-dh_pem(doc) ->
-    [""];
-dh_pem(suite) ->
-    [];
+dh_pem() ->
+    [{doc, "DH parametrs PEM-file decode/encode"}].
 dh_pem(Config) when is_list(Config) ->
     Datadir = ?config(data_dir, Config),
     [{'DHParameter', DerDH, not_encrypted} = Entry] =
@@ -249,12 +194,41 @@ dh_pem(Config) when is_list(Config) ->
     DHParameter = public_key:pem_entry_decode(Entry),
 
     Entry = public_key:pem_entry_encode('DHParameter', DHParameter).
-   
+
 %%--------------------------------------------------------------------
-cert_pem(doc) ->
-    [""];
-cert_pem(suite) ->
-    [];
+
+pkcs10_pem() ->
+   [{doc, "PKCS-10 PEM-file decode/encode"}].
+pkcs10_pem(Config) when is_list(Config) ->
+    Datadir = ?config(data_dir, Config),
+    [{'CertificationRequest', DerPKCS10, not_encrypted} = Entry] =
+	erl_make_certs:pem_to_der(filename:join(Datadir, "req.pem")),
+
+    erl_make_certs:der_to_pem(filename:join(Datadir, "new_req.pem"), [Entry]),
+
+    PKCS10 = public_key:der_decode('CertificationRequest', DerPKCS10),
+    PKCS10 = public_key:pem_entry_decode(Entry),
+
+    Entry = public_key:pem_entry_encode('CertificationRequest', PKCS10).
+
+%%--------------------------------------------------------------------
+pkcs7_pem() ->
+    [{doc, "PKCS-7 PEM-file decode/encode"}].
+pkcs7_pem(Config) when is_list(Config) ->
+    Datadir = ?config(data_dir, Config),
+    [{'ContentInfo', DerPKCS7, not_encrypted} = Entry] =
+	erl_make_certs:pem_to_der(filename:join(Datadir, "pkcs7_cert.pem")),
+
+    erl_make_certs:der_to_pem(filename:join(Datadir, "new_pkcs7_cert.pem"), [Entry]),
+
+    PKCS7 = public_key:der_decode('ContentInfo', DerPKCS7),
+    PKCS7 = public_key:pem_entry_decode(Entry),
+
+    Entry = public_key:pem_entry_encode('ContentInfo', PKCS7).
+
+%%--------------------------------------------------------------------
+cert_pem() ->
+    [{doc, "Certificate PEM-file decode/encode"}].
 cert_pem(Config) when is_list(Config) ->
     Datadir = ?config(data_dir, Config),
 
@@ -280,10 +254,8 @@ cert_pem(Config) when is_list(Config) ->
     [Entry0] = erl_make_certs:pem_to_der(filename:join(Datadir, "wdsa.pem")).
 
 %%--------------------------------------------------------------------
-ssh_rsa_public_key(doc) ->
-    "";
-ssh_rsa_public_key(suite) ->
-    [];
+ssh_rsa_public_key() ->
+    [{doc, "ssh rsa public key decode/encode"}].
 ssh_rsa_public_key(Config) when is_list(Config) ->
     Datadir = ?config(data_dir, Config),
 
@@ -308,10 +280,8 @@ ssh_rsa_public_key(Config) when is_list(Config) ->
 
 %%--------------------------------------------------------------------
 
-ssh_dsa_public_key(doc) ->
-    "";
-ssh_dsa_public_key(suite) ->
-    [];
+ssh_dsa_public_key() ->
+    [{doc, "ssh dsa public key decode/encode"}].
 ssh_dsa_public_key(Config) when is_list(Config) ->
     Datadir = ?config(data_dir, Config),
 
@@ -335,10 +305,8 @@ ssh_dsa_public_key(Config) when is_list(Config) ->
 	public_key:ssh_decode(EncodedOpenSsh, public_key).
 
 %%--------------------------------------------------------------------
-ssh_rfc4716_rsa_comment(doc) ->
-       "Test comment header and rsa key";
-ssh_rfc4716_rsa_comment(suite) ->
-    [];
+ssh_rfc4716_rsa_comment() ->
+    [{doc, "Test comment header and rsa key"}].
 ssh_rfc4716_rsa_comment(Config) when is_list(Config) ->
     Datadir = ?config(data_dir, Config),
 
@@ -353,10 +321,8 @@ ssh_rfc4716_rsa_comment(Config) when is_list(Config) ->
     RSARawSsh2 = public_key:ssh_encode([{PubKey, Attributes}], rfc4716_public_key).
 
 %%--------------------------------------------------------------------
-ssh_rfc4716_dsa_comment(doc) ->
-       "Test comment header and dsa key";
-ssh_rfc4716_dsa_comment(suite) ->
-    [];
+ssh_rfc4716_dsa_comment() ->
+     [{doc, "Test comment header and dsa key"}].
 ssh_rfc4716_dsa_comment(Config) when is_list(Config) ->
     Datadir = ?config(data_dir, Config),
 
@@ -375,10 +341,8 @@ ssh_rfc4716_dsa_comment(Config) when is_list(Config) ->
         public_key:ssh_decode(Encoded, public_key).
 
 %%--------------------------------------------------------------------
-ssh_rfc4716_rsa_subject(doc) ->
-       "Test another header value than comment";
-ssh_rfc4716_rsa_subject(suite) ->
-    [];
+ssh_rfc4716_rsa_subject() ->
+    [{doc,  "Test another header value than comment"}].
 ssh_rfc4716_rsa_subject(Config) when is_list(Config) ->
     Datadir = ?config(data_dir, Config),
 
@@ -397,16 +361,25 @@ ssh_rfc4716_rsa_subject(Config) when is_list(Config) ->
         public_key:ssh_decode(Encoded, public_key).
 
 %%--------------------------------------------------------------------
-ssh_known_hosts(doc) ->
-    "";
-ssh_known_hosts(suite) ->
-    [];
+ssh_known_hosts() ->
+    [{doc, "ssh known hosts file encode/decode"}].
 ssh_known_hosts(Config) when is_list(Config) ->
     Datadir = ?config(data_dir, Config),
 
     {ok, SshKnownHosts} = file:read_file(filename:join(Datadir, "known_hosts")),
-    [{#'RSAPublicKey'{}, Attributes1}, {#'RSAPublicKey'{}, Attributes2}] = Decoded =
+    [{#'RSAPublicKey'{}, Attributes1}, {#'RSAPublicKey'{}, Attributes2},
+     {#'RSAPublicKey'{}, Attributes3}, {#'RSAPublicKey'{}, Attributes4}] = Decoded =
         public_key:ssh_decode(SshKnownHosts, known_hosts),
+
+    Comment1 = undefined,
+    Comment2 = "foo@bar.com",
+    Comment3 = "Comment with whitespaces",
+    Comment4 = "foo@bar.com Comment with whitespaces",
+    	
+    Comment1 = proplists:get_value(comment, Attributes1, undefined),
+    Comment2 = proplists:get_value(comment, Attributes2),
+    Comment3 = proplists:get_value(comment, Attributes3),
+    Comment4 = proplists:get_value(comment, Attributes4),	
 
     Value1 = proplists:get_value(hostnames, Attributes1, undefined),
     Value2 = proplists:get_value(hostnames, Attributes2, undefined),
@@ -417,66 +390,82 @@ ssh_known_hosts(Config) when is_list(Config) ->
 
 %%--------------------------------------------------------------------
 
-ssh1_known_hosts(doc) ->
-    "";
-ssh1_known_hosts(suite) ->
-    [];
+ssh1_known_hosts() ->
+    [{doc, "ssh (ver 1) known hosts file encode/decode"}].
 ssh1_known_hosts(Config) when is_list(Config) ->
     Datadir = ?config(data_dir, Config),
 
     {ok, SshKnownHosts} = file:read_file(filename:join(Datadir, "ssh1_known_hosts")),
-    [{#'RSAPublicKey'{}, Attributes1}, {#'RSAPublicKey'{}, Attributes2}] = Decoded =
-        public_key:ssh_decode(SshKnownHosts, known_hosts),
+    [{#'RSAPublicKey'{}, Attributes1}, {#'RSAPublicKey'{}, Attributes2},{#'RSAPublicKey'{}, Attributes3}] 
+	= Decoded = public_key:ssh_decode(SshKnownHosts, known_hosts),
 
     Value1 = proplists:get_value(hostnames, Attributes1, undefined),
     Value2 = proplists:get_value(hostnames, Attributes2, undefined),
     true = (Value1 =/= undefined) and (Value2 =/= undefined),
 
+    Comment ="dhopson@VMUbuntu-DSH comment with whitespaces",
+    Comment = proplists:get_value(comment, Attributes3),
+
     Encoded = public_key:ssh_encode(Decoded, known_hosts),
     Decoded = public_key:ssh_decode(Encoded, known_hosts).
 
 %%--------------------------------------------------------------------
-ssh_auth_keys(doc) ->
-    "";
-ssh_auth_keys(suite) ->
-    [];
+ssh_auth_keys() ->
+    [{doc, "ssh authorized keys file encode/decode"}].
 ssh_auth_keys(Config) when is_list(Config) ->
     Datadir = ?config(data_dir, Config),
 
     {ok, SshAuthKeys} = file:read_file(filename:join(Datadir, "auth_keys")),
-    [{#'RSAPublicKey'{}, Attributes1}, {{_, #'Dss-Parms'{}}, _Attributes2}] = Decoded =
+    [{#'RSAPublicKey'{}, Attributes1}, {{_, #'Dss-Parms'{}}, Attributes2},
+     {#'RSAPublicKey'{}, Attributes3}, {{_, #'Dss-Parms'{}}, Attributes4}
+    ] = Decoded =
         public_key:ssh_decode(SshAuthKeys, auth_keys),
 
     Value1 = proplists:get_value(options, Attributes1, undefined),
     true = Value1 =/= undefined,
 
+    Comment1 = Comment2 = "dhopson@VMUbuntu-DSH",
+    Comment3 = Comment4 ="dhopson@VMUbuntu-DSH comment with whitespaces",
+    
+    Comment1 = proplists:get_value(comment, Attributes1),
+    Comment2 = proplists:get_value(comment, Attributes2),
+    Comment3 = proplists:get_value(comment, Attributes3),
+    Comment4 = proplists:get_value(comment, Attributes4),
+
     Encoded = public_key:ssh_encode(Decoded, auth_keys),
     Decoded = public_key:ssh_decode(Encoded, auth_keys).
 
 %%--------------------------------------------------------------------
-ssh1_auth_keys(doc) ->
-    "";
-ssh1_auth_keys(suite) ->
-    [];
+ssh1_auth_keys() ->
+    [{doc, "ssh (ver 1) authorized keys file encode/decode"}].
 ssh1_auth_keys(Config) when is_list(Config) ->
     Datadir = ?config(data_dir, Config),
 
     {ok, SshAuthKeys} = file:read_file(filename:join(Datadir, "ssh1_auth_keys")),
-    [{#'RSAPublicKey'{}, Attributes1}, {#'RSAPublicKey'{}, Attributes2}] = Decoded =
+    [{#'RSAPublicKey'{}, Attributes1},
+     {#'RSAPublicKey'{}, Attributes2}, {#'RSAPublicKey'{}, Attributes3},
+     {#'RSAPublicKey'{}, Attributes4}, {#'RSAPublicKey'{}, Attributes5}] = Decoded =
         public_key:ssh_decode(SshAuthKeys, auth_keys),
 
-    Value1 = proplists:get_value(bits, Attributes1, undefined),
-    Value2 = proplists:get_value(bits, Attributes2, undefined),
+    Value1 = proplists:get_value(bits, Attributes2, undefined),
+    Value2 = proplists:get_value(bits, Attributes3, undefined),
     true = (Value1 =/= undefined) and (Value2 =/= undefined),
+
+    Comment2 = Comment3 = "dhopson@VMUbuntu-DSH",
+    Comment4 = Comment5 ="dhopson@VMUbuntu-DSH comment with whitespaces",
+    
+    undefined = proplists:get_value(comment, Attributes1, undefined),
+    Comment2 = proplists:get_value(comment, Attributes2),
+    Comment3 = proplists:get_value(comment, Attributes3),
+    Comment4 = proplists:get_value(comment, Attributes4),
+    Comment5 = proplists:get_value(comment, Attributes5),
 
     Encoded = public_key:ssh_encode(Decoded, auth_keys),
     Decoded = public_key:ssh_decode(Encoded, auth_keys).
 
 %%--------------------------------------------------------------------
-ssh_openssh_public_key_with_comment(doc) ->
-    "Test that emty lines and lines starting with # are ignored";
-ssh_openssh_public_key_with_comment(suite) ->
-    [];
+ssh_openssh_public_key_with_comment() ->
+    [{doc, "Test that emty lines and lines starting with # are ignored"}].
 ssh_openssh_public_key_with_comment(Config) when is_list(Config) ->
     Datadir = ?config(data_dir, Config),
 
@@ -484,10 +473,8 @@ ssh_openssh_public_key_with_comment(Config) when is_list(Config) ->
     [{{_, #'Dss-Parms'{}}, _}] = public_key:ssh_decode(DSARawOpenSsh, openssh_public_key).
 
 %%--------------------------------------------------------------------
-ssh_openssh_public_key_long_header(doc) ->
-    "Test that long headers are handled";
-ssh_openssh_public_key_long_header(suite) ->
-    [];
+ssh_openssh_public_key_long_header() ->
+  [{doc, "Test that long headers are handled"}].
 ssh_openssh_public_key_long_header(Config) when is_list(Config) ->
     Datadir = ?config(data_dir, Config),
 
@@ -498,10 +485,8 @@ ssh_openssh_public_key_long_header(Config) when is_list(Config) ->
     Decoded = public_key:ssh_decode(Encoded, rfc4716_public_key).
 
 %%--------------------------------------------------------------------
-encrypt_decrypt(doc) -> 
-    [""];
-encrypt_decrypt(suite) -> 
-    [];
+encrypt_decrypt() ->
+    [{doc, "Test public_key:encrypt_private and public_key:decrypt_public"}].
 encrypt_decrypt(Config) when is_list(Config) -> 
     {PrivateKey, _DerKey} = erl_make_certs:gen_rsa(64),
     #'RSAPrivateKey'{modulus=Mod, publicExponent=Exp} = PrivateKey,
@@ -518,10 +503,8 @@ encrypt_decrypt(Config) when is_list(Config) ->
     ok.
        
 %%--------------------------------------------------------------------
-rsa_sign_verify(doc) ->
-    ["Checks that we can sign and verify rsa signatures."];
-rsa_sign_verify(suite) ->
-    [];
+rsa_sign_verify() ->
+    [{doc, "Checks that we can sign and verify rsa signatures."}].
 rsa_sign_verify(Config) when is_list(Config) ->
     Ca = {_, CaKey} = erl_make_certs:make_cert([]),
     {Cert1, _} = erl_make_certs:make_cert([{key, dsa}, {issuer, Ca}]),
@@ -541,10 +524,8 @@ rsa_sign_verify(Config) when is_list(Config) ->
     
 %%--------------------------------------------------------------------
 
-dsa_sign_verify(doc) ->
-    ["Checks that we can sign and verify dsa signatures."];
-dsa_sign_verify(suite) ->
-    [];
+dsa_sign_verify() ->
+    [{doc, "Checks that we can sign and verify dsa signatures."}].
 dsa_sign_verify(Config) when is_list(Config) ->
     Ca = erl_make_certs:make_cert([]),
     CertInfo = {_,CertKey1} = erl_make_certs:make_cert([{key, dsa}, {issuer, Ca}]),
@@ -580,10 +561,8 @@ dsa_sign_verify(Config) when is_list(Config) ->
 			      {DSAPublicKey, DSAParams}).
 
 %%--------------------------------------------------------------------
-pkix(doc) ->
-    "Misc pkix tests not covered elsewhere";
-pkix(suite) ->
-    [];
+pkix() ->
+    [{doc, "Misc pkix tests not covered elsewhere"}].
 pkix(Config) when is_list(Config) ->
     Datadir = ?config(data_dir, Config),
     Certs0 = erl_make_certs:pem_to_der(filename:join(Datadir, "cacerts.pem")),
@@ -621,17 +600,15 @@ pkix(Config) when is_list(Config) ->
 		 [[{'AttributeTypeAndValue', {2,5,4,3},{printableString,"ERLANGCA"}}],
 		  [{'AttributeTypeAndValue', {2,5,4,3},{printableString," erlang  ca "}}]]},
     VerifyStr = {rdnSequence, 
-		 [[{'AttributeTypeAndValue', {2,5,4,3},{printableString,"erlang ca"}}],
-		  [{'AttributeTypeAndValue', {2,5,4,3},{printableString,"erlangca"}}]]},
+		 [[{'AttributeTypeAndValue', {2,5,4,3},{printableString,"erlangca"}}],
+		  [{'AttributeTypeAndValue', {2,5,4,3},{printableString,"erlang ca"}}]]},
     VerifyStr = public_key:pkix_normalize_name(TestStr),
 
     ok.
 
 %%--------------------------------------------------------------------
-pkix_countryname(doc) ->
-    "Test workaround for certs that code x509countryname as utf8";
-pkix_countryname(suite) ->
-    [];
+pkix_countryname() ->
+ [{doc, "Test workaround for certs that code x509countryname as utf8"}].
 pkix_countryname(Config) when is_list(Config) ->
     Cert = incorrect_pkix_cert(),
     OTPCert = public_key:pkix_decode_cert(Cert, otp),
@@ -641,24 +618,9 @@ pkix_countryname(Config) when is_list(Config) ->
     check_countryname(Issuer),
     check_countryname(Subj).
 
-check_countryname({rdnSequence,DirName}) ->
-    do_check_countryname(DirName).
-do_check_countryname([]) ->
-    ok;
-do_check_countryname([#'AttributeTypeAndValue'{type = ?'id-at-countryName',
-					       value = "US"}|_]) ->
-    ok;
-do_check_countryname([#'AttributeTypeAndValue'{type = ?'id-at-countryName',
-					       value =  Value}|_]) ->
-    test_server:fail({incorrect_cuntry_name, Value});
-do_check_countryname([_| Rest]) ->
-    do_check_countryname(Rest).
-
 %%--------------------------------------------------------------------
-pkix_path_validation(doc) ->
-    "Misc pkix tests not covered elsewhere";
-pkix_path_validation(suite) ->
-    [];
+pkix_path_validation() ->
+    [{doc, "Test PKIX path validation"}].
 pkix_path_validation(Config) when is_list(Config) ->
     CaK = {Trusted,_} = 
 	erl_make_certs:make_cert([{key, dsa},
@@ -689,7 +651,8 @@ pkix_path_validation(Config) when is_list(Config) ->
 
     CertK3 = {Cert3,_}  = erl_make_certs:make_cert([{issuer, CertK1}, 
 					       {extensions, [{basic_constraints, false}]}]),
-    {Cert4,_}  = erl_make_certs:make_cert([{issuer, CertK3}]),
+    {Cert4,_}  = erl_make_certs:make_cert([{issuer, CertK3}, {extensions, [{key_usage, undefined}]}]),
+
     {error, {bad_cert,missing_basic_constraint}} =
 	public_key:pkix_path_validation(Trusted, [Cert1, Cert3,Cert4], []),
 
@@ -726,6 +689,46 @@ pkix_path_validation(Config) when is_list(Config) ->
 	public_key:pkix_path_validation(unknown_ca, [Cert1], [{verify_fun,
 							      VerifyFunAndState1}]),
     ok.
+
+%%--------------------------------------------------------------------
+pkix_iso_rsa_oid() ->
+ [{doc, "Test workaround for supporting certs that use ISO oids"
+   " 1.3.14.3.2.29 instead of PKIX/PKCS oid"}].
+pkix_iso_rsa_oid(Config) when is_list(Config) ->
+    Datadir = ?config(data_dir, Config),
+    {ok, PemCert} = file:read_file(filename:join(Datadir, "rsa_ISO.pem")),
+    [{_, Cert, _}] = public_key:pem_decode(PemCert),
+    OTPCert = public_key:pkix_decode_cert(Cert, otp),
+    SigAlg = OTPCert#'OTPCertificate'.signatureAlgorithm,
+    {_, rsa} = public_key:pkix_sign_types(SigAlg#'SignatureAlgorithm'.algorithm).
+
+%%--------------------------------------------------------------------
+pkix_iso_dsa_oid() ->
+ [{doc, "Test workaround for supporting certs that use ISO oids"
+   "1.3.14.3.2.27 instead of PKIX/PKCS oid"}].
+pkix_iso_dsa_oid(Config) when is_list(Config) ->
+    Datadir = ?config(data_dir, Config),
+    {ok, PemCert} = file:read_file(filename:join(Datadir, "dsa_ISO.pem")),
+    [{_, Cert, _}] = public_key:pem_decode(PemCert),
+    OTPCert = public_key:pkix_decode_cert(Cert, otp),
+    SigAlg = OTPCert#'OTPCertificate'.signatureAlgorithm,
+    {_, dsa} = public_key:pkix_sign_types(SigAlg#'SignatureAlgorithm'.algorithm).
+
+%%--------------------------------------------------------------------
+%% Internal functions ------------------------------------------------
+%%--------------------------------------------------------------------
+check_countryname({rdnSequence,DirName}) ->
+    do_check_countryname(DirName).
+do_check_countryname([]) ->
+    ok;
+do_check_countryname([#'AttributeTypeAndValue'{type = ?'id-at-countryName',
+					       value = "US"}|_]) ->
+    ok;
+do_check_countryname([#'AttributeTypeAndValue'{type = ?'id-at-countryName',
+					       value =  Value}|_]) ->
+    ct:fail({incorrect_cuntry_name, Value});
+do_check_countryname([_| Rest]) ->
+    do_check_countryname(Rest).
 
 check_entry_type(#'DSAPrivateKey'{}, 'DSAPrivateKey') ->
     true;

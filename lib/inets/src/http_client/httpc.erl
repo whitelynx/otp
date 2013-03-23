@@ -163,8 +163,13 @@ request(Method,
 	{error, Reason} ->
 	    {error, Reason};
 	{ok, ParsedUrl} ->
-	    handle_request(Method, Url, ParsedUrl, Headers, [], [], 
-			   HTTPOptions, Options, Profile)
+	    case header_parse(Headers) of
+		{error, Reason} ->
+		    {error, Reason};
+		_ ->
+		    handle_request(Method, Url, ParsedUrl, Headers, [], [], 
+				   HTTPOptions, Options, Profile)
+	    end
     end;
      
 request(Method, 
@@ -917,6 +922,10 @@ validate_options([{proxy, Proxy} = Opt| Tail], Acc) ->
     validate_proxy(Proxy),
     validate_options(Tail, [Opt | Acc]);
 
+validate_options([{https_proxy, Proxy} = Opt| Tail], Acc) ->
+    validate_https_proxy(Proxy),
+    validate_options(Tail, [Opt | Acc]);
+
 validate_options([{max_sessions, Value} = Opt| Tail], Acc) ->
     validate_max_sessions(Value),
     validate_options(Tail, [Opt | Acc]);
@@ -978,6 +987,14 @@ validate_proxy({{ProxyHost, ProxyPort}, NoProxy} = Proxy)
     Proxy;
 validate_proxy(BadProxy) ->
     bad_option(proxy, BadProxy).
+
+validate_https_proxy({{ProxyHost, ProxyPort}, NoProxy} = Proxy) 
+  when is_list(ProxyHost) andalso 
+       is_integer(ProxyPort) andalso 
+       is_list(NoProxy) ->
+    Proxy;
+validate_https_proxy(BadProxy) ->
+    bad_option(https_proxy, BadProxy).
 
 validate_max_sessions(Value) when is_integer(Value) andalso (Value >= 0) ->
     Value;
@@ -1235,7 +1252,12 @@ uri_parse(URI, Opts) ->
 
 
 %%--------------------------------------------------------------------------
-    
+header_parse([]) ->
+    ok;
+header_parse([{Field, Value}|T]) when is_list(Field), is_list(Value) ->    
+    header_parse(T);
+header_parse(_) -> 
+    {error, {headers_error, not_strings}}.
 child_name2info(undefined) ->
     {error, no_such_service};
 child_name2info(httpc_manager) ->

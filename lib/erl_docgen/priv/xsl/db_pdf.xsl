@@ -3,7 +3,7 @@
      #
      # %CopyrightBegin%
      #
-     # Copyright Ericsson AB 2009-2012. All Rights Reserved.
+     # Copyright Ericsson AB 2009-2013. All Rights Reserved.
      #
      # The contents of this file are subject to the Erlang Public License,
      # Version 1.1, (the "License"); you may not use this file except in
@@ -650,7 +650,7 @@
 
       <fo:flow flow-name="xsl-region-body">
         <fo:block xsl:use-attribute-sets="cover.logo">
-          <fo:external-graphic src="{$docgen}/priv/images/erlang-logo.gif"/>
+          <fo:external-graphic src="{$logo}"/>
         </fo:block>
         <fo:block xsl:use-attribute-sets="cover.title" id="cover-page">
           <xsl:apply-templates/>
@@ -1102,11 +1102,13 @@
 
   <xsl:template match="taglist/item">
     <xsl:param name="partnum"/>
-    <fo:block xsl:use-attribute-sets="tagitem">
-      <xsl:apply-templates>
-        <xsl:with-param name="partnum" select="$partnum"/>
-      </xsl:apply-templates>
-    </fo:block>
+    <fo:block-container>
+      <fo:block xsl:use-attribute-sets="tagitem">
+	<xsl:apply-templates>
+	  <xsl:with-param name="partnum" select="$partnum"/>
+	</xsl:apply-templates>
+      </fo:block>
+    </fo:block-container>
   </xsl:template>
 
 

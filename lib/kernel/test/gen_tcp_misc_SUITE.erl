@@ -42,13 +42,22 @@
 	 killing_acceptor/1,killing_multi_acceptors/1,killing_multi_acceptors2/1,
 	 several_accepts_in_one_go/1, accept_system_limit/1,
 	 active_once_closed/1, send_timeout/1, send_timeout_active/1,
-	 otp_7731/1, zombie_sockets/1, otp_7816/1, otp_8102/1,
+	 otp_7731/1, zombie_sockets/1, otp_7816/1, otp_8102/1, wrapping_oct/1,
          otp_9389/1]).
 
 %% Internal exports.
 -export([sender/3, not_owner/1, passive_sockets_server/2, priority_server/1, 
-	 otp_7731_server/1, zombie_server/2]).
+	 oct_acceptor/1,
+	 otp_7731_server/1, zombie_server/2, do_iter_max_socks/2]).
 
+init_per_testcase(iter_max_socks, Config) when is_list(Config) ->
+    Dog = case os:type() of
+	      {win32,_} ->
+		  test_server:timetrap(test_server:minutes(30));
+	      _Else ->
+		  test_server:timetrap(test_server:seconds(240))
+	  end,
+    [{watchdog, Dog}|Config];
 init_per_testcase(_Func, Config) when is_list(Config) ->
     Dog = test_server:timetrap(test_server:seconds(240)),
     [{watchdog, Dog}|Config].
@@ -75,6 +84,7 @@ all() ->
      killing_acceptor, killing_multi_acceptors,
      killing_multi_acceptors2, several_accepts_in_one_go, accept_system_limit,
      active_once_closed, send_timeout, send_timeout_active, otp_7731,
+     wrapping_oct,
      zombie_sockets, otp_7816, otp_8102, otp_9389].
 
 groups() -> 
@@ -588,8 +598,14 @@ iter_max_socks(doc) ->
     ["Open as many sockets as possible. Do this several times and check ",
      "that we get the same number of sockets every time."];
 iter_max_socks(Config) when is_list(Config) ->
-    N = 20,
-    L = do_iter_max_socks(N, initalize),
+    N = case os:type() of {win32,_} -> 10; _ -> 20 end,
+    %% Run on a different node in order to limit the effect if this test fails.
+    Dir = filename:dirname(code:which(?MODULE)),
+    {ok,Node} = test_server:start_node(test_iter_max_socks,slave,
+				       [{args,"-pa " ++ Dir}]),
+    L = rpc:call(Node,?MODULE,do_iter_max_socks,[N, initalize]),
+    test_server:stop_node(Node),
+
     io:format("Result: ~p",[L]),
     all_equal(L),
     {comment, "Max sockets: " ++ integer_to_list(hd(L))}.
@@ -2574,4 +2590,72 @@ otp_9389_loop(S, OrigLinkHdr, State) ->
     after
         3000 ->
             ?line error({timeout,header})
+    end.
+
+wrapping_oct(doc) ->
+    "Check that 64bit octet counters work."; 
+wrapping_oct(suite) ->
+    [];
+wrapping_oct(Config) when is_list(Config) ->
+    Dog = test_server:timetrap(test_server:seconds(600)),
+    {ok,Sock} = gen_tcp:listen(0,[{active,false},{mode,binary}]),
+    {ok,Port} = inet:port(Sock),
+    spawn_link(?MODULE,oct_acceptor,[Sock]),
+    Res = oct_datapump(Port,16#1FFFFFFFF),
+    gen_tcp:close(Sock),
+    test_server:timetrap_cancel(Dog),
+    ok = Res,
+    ok.
+
+oct_datapump(Port,N) ->
+    {ok,Sock} = gen_tcp:connect("localhost",Port,
+				[{active,false},{mode,binary}]),
+    oct_pump(Sock,N,binary:copy(<<$a:8>>,100000),0).
+
+oct_pump(S,N,_,_) when N =< 0 ->
+    gen_tcp:close(S),
+    ok;
+oct_pump(S,N,Bin,Last) ->
+    case gen_tcp:send(S,Bin) of
+	ok ->
+	    {ok,Stat}=inet:getstat(S),
+	    {_,R}=lists:keyfind(send_oct,1,Stat),
+	    case (R < Last) of
+		true ->
+		    io:format("ERROR (output) ~p < ~p~n",[R,Last]),
+		    output_counter_error;
+		false ->
+		    oct_pump(S,N-byte_size(Bin),Bin,R)
+	    end;
+	_ ->
+	    input_counter_error
+    end.
+    
+
+oct_acceptor(Sock) ->
+    {ok,Data} = gen_tcp:accept(Sock),
+    oct_aloop(Data,0,0).
+
+oct_aloop(S,X,Times) ->
+    case gen_tcp:recv(S,0) of
+	{ok,_} ->
+	    {ok,Stat}=inet:getstat(S),
+	    {_,R}=lists:keyfind(recv_oct,1,Stat),
+	    case (R < X) of
+		true ->
+		    io:format("ERROR ~p < ~p~n",[R,X]),
+		    gen_tcp:close(S),
+		    input_counter_error;
+		false ->
+		    case Times rem 16#FFFFF of
+			0 ->
+			    io:format("Read: ~p~n",[R]);
+			_ ->
+			    ok
+		    end,
+		    oct_aloop(S,R,Times+1)
+	    end;
+	_ ->
+	    gen_tcp:close(S),
+	    closed
     end.

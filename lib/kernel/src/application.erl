@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %% 
-%% Copyright Ericsson AB 1996-2011. All Rights Reserved.
+%% Copyright Ericsson AB 1996-2013. All Rights Reserved.
 %% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -22,8 +22,9 @@
 	 load/1, load/2, unload/1, takeover/2,
 	 which_applications/0, which_applications/1,
 	 loaded_applications/0, permit/2]).
+-export([ensure_started/1, ensure_started/2]).
 -export([set_env/3, set_env/4, unset_env/2, unset_env/3]).
--export([get_env/1, get_env/2, get_all_env/0, get_all_env/1]).
+-export([get_env/1, get_env/2, get_env/3, get_all_env/0, get_all_env/1]).
 -export([get_key/1, get_key/2, get_all_key/0, get_all_key/1]).
 -export([get_application/0, get_application/1, info/0]).
 -export([start_type/0]).
@@ -37,8 +38,7 @@
 -type application_opt() :: {'description', Description :: string()}
                          | {'vsn', Vsn :: string()}
                          | {'id', Id :: string()}
-                         | {'modules', [(Module :: module()) |
-                                        {Module :: module(), Version :: term()}]}
+                         | {'modules', [Module :: module()]}
                          | {'registered', Names :: [Name :: atom()]}
                          | {'applications', [Application :: atom()]}
                          | {'included_applications', [Application :: atom()]}
@@ -132,6 +132,28 @@ start(Application, RestartType) ->
 	    application_controller:start_application(Name, RestartType);
 	{error, {already_loaded, Name}} ->
 	    application_controller:start_application(Name, RestartType);
+	Error ->
+	    Error
+    end.
+
+-spec ensure_started(Application) -> 'ok' | {'error', Reason} when
+      Application :: atom(),
+      Reason :: term().
+
+ensure_started(Application) ->
+    ensure_started(Application, temporary).
+
+-spec ensure_started(Application, Type) -> 'ok' | {'error', Reason} when
+      Application :: atom(),
+      Type :: restart_type(),
+      Reason :: term().
+
+ensure_started(Application, RestartType) ->
+    case start(Application, RestartType) of
+	ok ->
+	    ok;
+	{error, {already_started, Application}} ->
+	    ok;
 	Error ->
 	    Error
     end.
@@ -264,6 +286,20 @@ get_env(Key) ->
 
 get_env(Application, Key) -> 
     application_controller:get_env(Application, Key).
+
+-spec get_env(Application, Par, Def) -> Val when
+      Application :: atom(),
+      Par :: atom(),
+      Def :: term(),
+      Val :: term().
+
+get_env(Application, Key, Def) ->
+    case get_env(Application, Key) of
+    {ok, Val} ->
+        Val;
+    undefined ->
+        Def
+    end.
 
 -spec get_all_env() -> Env when
       Env :: [{Par :: atom(), Val :: term()}].

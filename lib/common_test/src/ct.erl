@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2003-2012. All Rights Reserved.
+%% Copyright Ericsson AB 2003-2013. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -144,11 +144,11 @@ run(TestDirs) ->
 %%% @spec run_test(Opts) -> Result
 %%%   Opts = [OptTuples]
 %%%   OptTuples = {dir,TestDirs} | {suite,Suites} | {group,Groups} |
-%%%               {testcase,Cases} | {spec,TestSpecs} | {label,Label} |
-%%%               {config,CfgFiles} | {userconfig, UserConfig} |
+%%%               {testcase,Cases} | {spec,TestSpecs} | {join_specs,Bool} |
+%%%               {label,Label} | {config,CfgFiles} | {userconfig, UserConfig} |
 %%%               {allow_user_terms,Bool} | {logdir,LogDir} |
 %%%               {silent_connections,Conns} | {stylesheet,CSSFile} |
-%%%               {cover,CoverSpecFile} | {step,StepOpts} |
+%%%               {cover,CoverSpecFile} | {cover_stop,Bool} | {step,StepOpts} |
 %%%               {event_handler,EventHandlers} | {include,InclDirs} |
 %%%               {auto_compile,Bool} | {create_priv_dir,CreatePrivDir}  |
 %%%               {multiply_timetraps,M} | {scale_timetraps,Bool} |
@@ -161,7 +161,8 @@ run(TestDirs) ->
 %%%   TestDirs = [string()] | string()
 %%%   Suites = [string()] | [atom()] | string() | atom()
 %%%   Cases = [atom()] | atom()
-%%%   Groups = [atom()] | atom()
+%%%   Groups = GroupNameOrPath | [GroupNameOrPath]
+%%%   GroupNameOrPath = [atom()] | atom() | all
 %%%   TestSpecs = [string()] | string()
 %%%   Label = string() | atom()
 %%%   CfgFiles = [string()] | string()
@@ -274,7 +275,8 @@ step(TestDir,Suite,Case,Opts) ->
 %%% <c>&gt; ct_telnet:cmd(unix_telnet, "ls .").</c><br/>
 %%% <c>{ok,["ls","file1  ...",...]}</c></p>
 start_interactive() ->
-    ct_util:start(interactive).
+    ct_util:start(interactive),
+    ok.
 
 %%%-----------------------------------------------------------------
 %%% @spec stop_interactive() -> ok
@@ -282,7 +284,8 @@ start_interactive() ->
 %%% @doc Exit the interactive mode.
 %%% @see start_interactive/0
 stop_interactive() ->
-    ct_util:stop(normal).
+    ct_util:stop(normal),
+    ok.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%% MISC INTERFACE
@@ -732,7 +735,7 @@ fail(Format, Args) ->
 %%% overwrites the string set by this function.</p>
 comment(Comment) when is_list(Comment) ->
     Formatted =
-	case (catch io_lib:format("~s",[Comment])) of
+	case (catch io_lib:format("~ts",[Comment])) of
 	    {'EXIT',_} ->  % it's a list not a string
 		io_lib:format("~p",[Comment]);
 	    String ->
@@ -985,8 +988,9 @@ get_testdata(Key) ->
     end.
 
 %%%-----------------------------------------------------------------
-%%% @spec abort_current_testcase(Reason) -> ok | {error,no_testcase_running}
+%%% @spec abort_current_testcase(Reason) -> ok | {error,ErrorReason}
 %%%       Reason = term()
+%%%       ErrorReason = no_testcase_running | parallel_group
 %%%
 %%% @doc <p>When calling this function, the currently executing test case will be aborted.
 %%%      It is the user's responsibility to know for sure which test case is currently

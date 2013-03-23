@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2008-2012. All Rights Reserved.
+%% Copyright Ericsson AB 2008-2013. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -36,13 +36,15 @@
 	 decrypt_public/2, decrypt_public/3,
 	 sign/3, verify/4,
 	 pkix_sign/2, pkix_verify/2,	 
+	 pkix_sign_types/1,
 	 pkix_is_self_signed/1, 
 	 pkix_is_fixed_dh_cert/1,
 	 pkix_is_issuer/2,
 	 pkix_issuer_id/2,
 	 pkix_normalize_name/1,
 	 pkix_path_validation/3,
-	 ssh_decode/2, ssh_encode/2
+	 ssh_decode/2, ssh_encode/2,
+	 pkix_crls_validate/3
 	]).
 
 -type rsa_padding()          :: 'rsa_pkcs1_padding' | 'rsa_pkcs1_oaep_padding' 
@@ -50,6 +52,9 @@
 -type public_crypt_options() :: [{rsa_pad, rsa_padding()}].
 -type rsa_digest_type()      :: 'md5' | 'sha'| 'sha224' | 'sha256' | 'sha384' | 'sha512'.
 -type dss_digest_type()      :: 'none' | 'sha'. %% None is for backwards compatibility
+-type crl_reason()           ::  unspecified | keyCompromise | cACompromise | affiliationChanged | superseded
+			       | cessationOfOperation | certificateHold | privilegeWithdrawn |  aACompromise.
+-type oid()                  :: tuple().
 
 -define(UINT32(X), X:32/unsigned-big-integer).
 -define(DER_NULL, <<5, 0>>).
@@ -332,6 +337,34 @@ format_rsa_private_key(#'RSAPrivateKey'{modulus = N, publicExponent = E,
    [crypto:mpint(K) || K <- [E, N, D]].
 
 %%--------------------------------------------------------------------
+
+-spec pkix_sign_types(SignatureAlg::oid()) ->
+			     %% Relevant dsa digest type is subpart of rsa digest type
+			     { DigestType :: rsa_digest_type(),
+			       SignatureType :: rsa | dsa
+			     }.
+%% Description:
+%%--------------------------------------------------------------------
+pkix_sign_types(?sha1WithRSAEncryption) ->
+    {sha, rsa};
+pkix_sign_types(?'sha-1WithRSAEncryption') ->
+    {sha, rsa};
+pkix_sign_types(?sha224WithRSAEncryption) ->
+    {sha224, rsa};
+pkix_sign_types(?sha256WithRSAEncryption) ->
+    {sha256, rsa};
+pkix_sign_types(?sha384WithRSAEncryption) ->
+    {sha384, rsa};
+pkix_sign_types(?sha512WithRSAEncryption) ->
+    {sha512, rsa};
+pkix_sign_types(?md5WithRSAEncryption) ->
+    {md5, rsa};
+pkix_sign_types(?'id-dsa-with-sha1') ->
+    {sha, dsa};
+pkix_sign_types(?'id-dsaWithSHA1') ->
+    {sha, dsa}.
+
+%%--------------------------------------------------------------------
 -spec sign(binary() | {digest, binary()},  rsa_digest_type() | dss_digest_type(),
 	   rsa_private_key() |
 	   dsa_private_key()) -> Signature :: binary().
@@ -403,7 +436,7 @@ pkix_sign(#'OTPTBSCertificate'{signature =
 			       = SigAlg} = TBSCert, Key) ->
 
     Msg = pkix_encode('OTPTBSCertificate', TBSCert, otp),
-    DigestType = pubkey_cert:digest_type(Alg),
+    {DigestType, _} = pkix_sign_types(Alg),
     Signature = sign(Msg, DigestType, Key),
     Cert = #'OTPCertificate'{tbsCertificate= TBSCert,
 			     signatureAlgorithm = SigAlg,
@@ -428,9 +461,9 @@ pkix_verify(DerCert,  #'RSAPublicKey'{} = RSAKey)
     verify(PlainText, DigestType, Signature, RSAKey).
 
 %%--------------------------------------------------------------------
--spec pkix_is_issuer(Cert::binary()| #'OTPCertificate'{},
-		     IssuerCert::binary()|
-				 #'OTPCertificate'{}) -> boolean().
+-spec pkix_is_issuer(Cert :: der_encoded()| #'OTPCertificate'{} | #'CertificateList'{},
+		     IssuerCert :: der_encoded()|
+				   #'OTPCertificate'{}) -> boolean().
 %%
 %% Description: Checks if <IssuerCert> issued <Cert>.
 %%--------------------------------------------------------------------
@@ -443,7 +476,11 @@ pkix_is_issuer(Cert, IssuerCert) when is_binary(IssuerCert) ->
 pkix_is_issuer(#'OTPCertificate'{tbsCertificate = TBSCert}, 
 	       #'OTPCertificate'{tbsCertificate = Candidate}) ->
     pubkey_cert:is_issuer(TBSCert#'OTPTBSCertificate'.issuer,
-			  Candidate#'OTPTBSCertificate'.subject).
+			  Candidate#'OTPTBSCertificate'.subject);
+pkix_is_issuer(#'CertificateList'{tbsCertList = TBSCRL},
+	       #'OTPCertificate'{tbsCertificate = Candidate}) ->
+    pubkey_cert:is_issuer(Candidate#'OTPTBSCertificate'.subject,
+			  pubkey_cert_records:transform(TBSCRL#'TBSCertList'.issuer, decode)).
 
 %%--------------------------------------------------------------------
 -spec pkix_is_self_signed(Cert::binary()| #'OTPCertificate'{}) -> boolean().
@@ -502,7 +539,7 @@ pkix_normalize_name(Issuer) ->
 %%-------------------------------------------------------------------- 
 -spec pkix_path_validation(Cert::binary()| #'OTPCertificate'{} | atom(),
 			   CertChain :: [binary()] ,
-			   Options :: list()) ->  
+			   Options :: proplists:proplist()) ->
 				  {ok, {PublicKeyInfo :: term(), 
 					PolicyTree :: term()}} |
 				  {error, {bad_cert, Reason :: term()}}.
@@ -511,7 +548,7 @@ pkix_normalize_name(Issuer) ->
 pkix_path_validation(PathErr, [Cert | Chain], Options0) when is_atom(PathErr)->
     {VerifyFun, Userstat0} =
 	proplists:get_value(verify_fun, Options0, ?DEFAULT_VERIFYFUN),
-    Otpcert = pkix_decode_cert(Cert, otp),
+    Otpcert = otp_cert(Cert),
     Reason = {bad_cert, PathErr},
     try VerifyFun(Otpcert, Reason, Userstat0) of
 	{valid, Userstate} ->
@@ -536,6 +573,27 @@ pkix_path_validation(#'OTPCertificate'{} = TrustedCert, CertChain, Options)
 							MaxPathDefault, 
 							Options),
     path_validation(CertChain, ValidationState).
+
+%--------------------------------------------------------------------
+-spec pkix_crls_validate(#'OTPCertificate'{},
+			 [{DP::#'DistributionPoint'{} ,CRL::#'CertificateList'{}}],
+			 Options :: proplists:proplist()) -> valid | {bad_cert, revocation_status_undetermined}
+								| {bad_cert, {revoked, crl_reason()}}.
+
+%% Description: Performs a basic path validation according to RFC 5280.
+%%--------------------------------------------------------------------
+pkix_crls_validate(OtpCert, [{_,_,_} |_] = DPAndCRLs, Options) ->
+    pkix_crls_validate(OtpCert, DPAndCRLs, DPAndCRLs,
+		       Options, pubkey_crl:init_revokation_state());
+
+pkix_crls_validate(OtpCert, DPAndCRLs0, Options) ->
+    CallBack = proplists:get_value(update_crl, Options, fun(_, CurrCRL) ->
+							       CurrCRL
+						       end),
+    DPAndCRLs = sort_dp_crls(DPAndCRLs0, CallBack),
+    pkix_crls_validate(OtpCert, DPAndCRLs, DPAndCRLs,
+		       Options, pubkey_crl:init_revokation_state()).
+
 
 %%--------------------------------------------------------------------
 -spec ssh_decode(binary(), public_key | ssh_file()) -> [{public_key(), Attributes::list()}].
@@ -611,12 +669,13 @@ path_validation([DerCert | Rest], ValidationState = #path_validation_state{
 	    {error, Reason}
     end;
 
-path_validation([DerCert | _] = Path,
+path_validation([Cert | _] = Path,
 		#path_validation_state{user_state = UserState0,
 				       verify_fun = VerifyFun} =
 		    ValidationState) ->
     Reason = {bad_cert, max_path_length_reached},
-    OtpCert = pkix_decode_cert(DerCert, otp),
+    OtpCert = otp_cert(Cert),
+
     try VerifyFun(OtpCert,  Reason, UserState0) of
 	{valid, UserState} ->
 	    path_validation(Path,
@@ -630,7 +689,7 @@ path_validation([DerCert | _] = Path,
 	    {error, Reason}
     end.
 
-validate(DerCert, #path_validation_state{working_issuer_name = Issuer,
+validate(Cert, #path_validation_state{working_issuer_name = Issuer,
 					 working_public_key = Key,
 					 working_public_key_parameters = 
 					 KeyParams, 
@@ -641,31 +700,31 @@ validate(DerCert, #path_validation_state{working_issuer_name = Issuer,
 					 verify_fun = VerifyFun} =
 	     ValidationState0) ->
 
-    OtpCert = pkix_decode_cert(DerCert, otp),
+    OtpCert = otp_cert(Cert),
 
-    UserState1 = pubkey_cert:validate_time(OtpCert, UserState0, VerifyFun),
-
-    UserState2 = pubkey_cert:validate_issuer(OtpCert, Issuer, UserState1, VerifyFun),
-
-    UserState3 = pubkey_cert:validate_names(OtpCert, Permit, Exclude, Last,
-					    UserState2,VerifyFun),
-
-    UserState4 = pubkey_cert:validate_revoked_status(OtpCert, UserState3, VerifyFun),
-    
-    {ValidationState1, UserState5} =
-	pubkey_cert:validate_extensions(OtpCert, ValidationState0, UserState4,
+    {ValidationState1, UserState1} =
+	pubkey_cert:validate_extensions(OtpCert, ValidationState0, UserState0,
 					VerifyFun),
 
     %% We want the key_usage extension to be checked before we validate
-    %% the signature. 
-    UserState6 = pubkey_cert:validate_signature(OtpCert, DerCert,
-						Key, KeyParams, UserState5, VerifyFun),
+    %% other things so that CRL validation errors will comply to standard
+    %% test suite description
+
+    UserState2 = pubkey_cert:validate_time(OtpCert, UserState1, VerifyFun),
+
+    UserState3 = pubkey_cert:validate_issuer(OtpCert, Issuer, UserState2, VerifyFun),
+
+    UserState4 = pubkey_cert:validate_names(OtpCert, Permit, Exclude, Last,
+					    UserState3, VerifyFun),
+
+    UserState5 = pubkey_cert:validate_signature(OtpCert, der_cert(Cert),
+						Key, KeyParams, UserState4, VerifyFun),
     UserState = case Last of
 		    false ->
-			pubkey_cert:verify_fun(OtpCert, valid, UserState6, VerifyFun);
+			pubkey_cert:verify_fun(OtpCert, valid, UserState5, VerifyFun);
 		    true ->
 			pubkey_cert:verify_fun(OtpCert, valid_peer,
-					       UserState6, VerifyFun)
+					       UserState5, VerifyFun)
 		end,
 
     ValidationState  = 
@@ -676,3 +735,110 @@ validate(DerCert, #path_validation_state{working_issuer_name = Issuer,
 sized_binary(Binary) ->
     Size = size(Binary),
     <<?UINT32(Size), Binary/binary>>.
+
+otp_cert(Der) when is_binary(Der) ->
+    pkix_decode_cert(Der, otp);
+otp_cert(#'OTPCertificate'{} =Cert) ->
+    Cert.
+
+der_cert(#'OTPCertificate'{} = Cert) ->
+    pkix_encode('OTPCertificate', Cert, otp);
+der_cert(Der) when is_binary(Der) ->
+    Der.
+
+pkix_crls_validate(_, [],_, _, _) ->
+    {bad_cert, revocation_status_undetermined};
+pkix_crls_validate(OtpCert, [{DP, CRL, DeltaCRL} | Rest],  All, Options, RevokedState0) ->
+    CallBack = proplists:get_value(update_crl, Options, fun(_, CurrCRL) ->
+							       CurrCRL
+						       end),
+    case pubkey_crl:fresh_crl(DP, CRL, CallBack) of
+	{fresh, CRL} ->
+	    do_pkix_crls_validate(OtpCert, [{DP, CRL, DeltaCRL} | Rest],
+				  All, Options, RevokedState0);
+	{fresh, NewCRL} ->
+	    NewAll = [{DP, NewCRL, DeltaCRL} | All -- [{DP, CRL, DeltaCRL}]],
+	    do_pkix_crls_validate(OtpCert, [{DP, NewCRL, DeltaCRL} | Rest],
+				  NewAll, Options, RevokedState0);
+	no_fresh_crl ->
+	    pkix_crls_validate(OtpCert, Rest, All, Options, RevokedState0)
+    end.
+
+do_pkix_crls_validate(OtpCert, [{DP, CRL, DeltaCRL} | Rest],  All, Options, RevokedState0) ->
+    OtherDPCRLs = All -- [{DP, CRL, DeltaCRL}],
+    case pubkey_crl:validate(OtpCert, OtherDPCRLs, DP, CRL, DeltaCRL, Options, RevokedState0) of
+	{undetermined, _, _} when Rest == []->
+	    {bad_cert, revocation_status_undetermined};
+	{undetermined, _, RevokedState} when Rest =/= []->
+	    pkix_crls_validate(OtpCert, Rest, All, Options, RevokedState);
+	{finished, unrevoked} ->
+	    valid;
+	{finished, Status} ->
+	    {bad_cert, Status}
+    end.
+
+sort_dp_crls(DpsAndCrls, FreshCB) ->
+    Sorted = do_sort_dp_crls(DpsAndCrls, dict:new()),
+    sort_crls(Sorted, FreshCB, []).
+
+do_sort_dp_crls([], Dict) ->
+    dict:to_list(Dict);
+do_sort_dp_crls([{DP, CRL} | Rest], Dict0) ->
+    Dict = try dict:fetch(DP, Dict0) of
+	       _ ->
+		   dict:append(DP, CRL, Dict0)
+	   catch _:_ ->
+		   dict:store(DP, [CRL], Dict0)
+	   end,
+    do_sort_dp_crls(Rest, Dict).
+
+sort_crls([], _, Acc) ->
+    Acc;
+
+sort_crls([{DP, AllCRLs} | Rest], FreshCB, Acc)->
+    {DeltaCRLs, CRLs} = do_sort_crls(AllCRLs),
+    DpsAndCRLs = combine(CRLs, DeltaCRLs, DP, FreshCB, []),
+    sort_crls(Rest, FreshCB, DpsAndCRLs ++ Acc).
+
+do_sort_crls(CRLs) ->
+    lists:partition(fun({_, CRL}) ->
+			    pubkey_crl:is_delta_crl(CRL)
+		    end, CRLs).
+
+combine([], _,_,_,Acc) ->
+    Acc;
+combine([{_, CRL} = Entry | CRLs], DeltaCRLs, DP, FreshCB, Acc) ->
+    DeltaCRL = combine(CRL, DeltaCRLs),
+    case pubkey_crl:fresh_crl(DP, DeltaCRL, FreshCB) of
+	no_fresh_crl ->
+	    combine(CRLs, DeltaCRLs, DP, FreshCB, [{DP, Entry, {undefined, undefined}} | Acc]);
+	{fresh, NewDeltaCRL} ->
+	    combine(CRLs, DeltaCRLs, DP, FreshCB, [{DP, Entry, NewDeltaCRL} | Acc])
+    end.
+
+combine(CRL, DeltaCRLs) ->
+    Deltas = lists:filter(fun({_,DeltaCRL}) ->
+				  pubkey_crl:combines(CRL, DeltaCRL)
+			  end, DeltaCRLs),
+    case Deltas of
+	[] ->
+	    {undefined, undefined};
+	[Delta] ->
+	    Delta;
+	[_,_|_] ->
+	    Fun =
+		fun({_, #'CertificateList'{tbsCertList = FirstTBSCRL}} = CRL1,
+		    {_, #'CertificateList'{tbsCertList = SecondTBSCRL}} = CRL2) ->
+			Time1 = pubkey_cert:time_str_2_gregorian_sec(
+				  FirstTBSCRL#'TBSCertList'.thisUpdate),
+			Time2 = pubkey_cert:time_str_2_gregorian_sec(
+				  SecondTBSCRL#'TBSCertList'.thisUpdate),
+			case Time1 > Time2 of
+			      true ->
+				CRL1;
+			    false ->
+				CRL2
+			end
+		end,
+	    lists:foldl(Fun,  hd(Deltas), tl(Deltas))
+    end.

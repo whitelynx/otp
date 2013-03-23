@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 1997-2012. All Rights Reserved.
+%% Copyright Ericsson AB 1997-2013. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -334,7 +334,7 @@ mk_cmd(Cmd) when is_atom(Cmd) ->		% backward comp.
 mk_cmd(Cmd) ->
     %% We insert a new line after the command, in case the command
     %% contains a comment character.
-    io_lib:format("(~s\n) </dev/null; echo  \"\^D\"\n", [Cmd]).
+    io_lib:format("(~ts\n) </dev/null; echo  \"\^D\"\n", [Cmd]).
 
 
 validate(Atom) when is_atom(Atom) ->

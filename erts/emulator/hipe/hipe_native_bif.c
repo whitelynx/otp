@@ -1,7 +1,7 @@
 /*
  * %CopyrightBegin%
  *
- * Copyright Ericsson AB 2001-2011. All Rights Reserved.
+ * Copyright Ericsson AB 2001-2013. All Rights Reserved.
  *
  * The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
@@ -238,7 +238,7 @@ void hipe_handle_exception(Process *c_p)
 
     if (c_p->mbuf) {
 	erts_printf("%s line %u: p==%p, p->mbuf==%p\n", __FUNCTION__, __LINE__, c_p, c_p->mbuf);
-	//erts_garbage_collect(c_p, 0, NULL, 0);
+	/* erts_garbage_collect(c_p, 0, NULL, 0); */
     }
 
     /*
@@ -270,7 +270,7 @@ void hipe_handle_exception(Process *c_p)
     c_p->def_arg_reg[0] = exception_tag[GET_EXC_CLASS(c_p->freason)];
 
     if (c_p->mbuf) {
-	//erts_printf("%s line %u: p==%p, p->mbuf==%p, p->lastbif==%p\n", __FUNCTION__, __LINE__, c_p, c_p->mbuf, c_p->hipe.lastbif);
+	/* erts_printf("%s line %u: p==%p, p->mbuf==%p, p->lastbif==%p\n", __FUNCTION__, __LINE__, c_p, c_p->mbuf, c_p->hipe.lastbif); */
 	erts_garbage_collect(c_p, 0, NULL, 0);
     }
 
@@ -503,9 +503,7 @@ static int validate_unicode(Eterm arg)
 {
     if (is_not_small(arg) ||
 	arg > make_small(0x10FFFFUL) ||
-	(make_small(0xD800UL) <= arg && arg <= make_small(0xDFFFUL)) ||
-	arg == make_small(0xFFFEUL) ||
-	arg == make_small(0xFFFFUL))
+	(make_small(0xD800UL) <= arg && arg <= make_small(0xDFFFUL)))
 	return 0;
     return 1;
 }

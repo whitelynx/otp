@@ -1,7 +1,8 @@
+%% -*- coding: utf-8 -*-
 %%
 %% %CopyrightBegin%
 %% 
-%% Copyright Ericsson AB 2006-2012. All Rights Reserved.
+%% Copyright Ericsson AB 2006-2013. All Rights Reserved.
 %% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -18,7 +19,7 @@
 %%
 %% ------------------------------------------------------------------------------
 %% File    : runtime_tools_sup.erl
-%% Author  : Lennart Öhman <lennart.ohman@st.se>
+%% Author  : Lennart Ã–hman <lennart.ohman@st.se>
 
 -module(runtime_tools_sup).
 -behaviour(supervisor).
@@ -33,7 +34,7 @@
 %% The runtime tools top most supervisor starts:
 %% -The ttb_autostart component. This is used for tracing at startup
 %%  using observer/ttb.
-init(AutoModArgs) ->
+init(_AutoModArgs) ->
     Flags = {one_for_one, 0, 3600},
     Children = [{ttb_autostart, {ttb_autostart, start_link, []},
                  temporary, 3000, worker, [ttb_autostart]}],

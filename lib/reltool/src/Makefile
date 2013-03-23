@@ -1,7 +1,7 @@
 #
 # %CopyrightBegin%
 #
-# Copyright Ericsson AB 2009-2012. All Rights Reserved.
+# Copyright Ericsson AB 2009-2013. All Rights Reserved.
 #
 # The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
@@ -57,7 +57,8 @@ APPUP_TARGET = $(EBIN)/$(APPUP_FILE)
 # ----------------------------------------------------
 
 ERL_COMPILE_FLAGS += +'{parse_transform,sys_pre_attributes}' \
-                     +'{attribute,insert,app_vsn,$(APP_VSN)}'
+                     +'{attribute,insert,app_vsn,$(APP_VSN)}' \
+		     -Werror
 
 # ----------------------------------------------------
 # Targets
@@ -79,10 +80,10 @@ docs:
 # ----------------------------------------------------
 
 $(APP_TARGET): $(APP_SRC) ../vsn.mk
-	sed -e 's;%VSN%;$(VSN);' $< > $@
+	$(vsn_verbose)sed -e 's;%VSN%;$(VSN);' $< > $@
 
 $(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
-	sed -e 's;%VSN%;$(VSN);' $< > $@
+	$(vsn_verbose)sed -e 's;%VSN%;$(VSN);' $< > $@
 
 # ----------------------------------------------------
 # Dependencies

@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2012. All Rights Reserved.
+%% Copyright Ericsson AB 2012-2013. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -58,7 +58,7 @@
 
 -spec init(Id, HookOpts) -> Result when
       Id :: term(),
-      HookOpts :: ct:hook_options(),
+      HookOpts :: ct_netconfc:hook_options(),
       Result :: {ok,[{ct_netconfc:conn_mod(),
 		      {ct_netconfc:log_type(),[ct_netconfc:key_or_name()]}}]}.
 init(_Id, HookOpts) ->
@@ -105,8 +105,9 @@ pre_init_per_testcase(TestCase,Config,CthState) ->
 			      "<table borders=1>"
 			      "<b>" ++ ConnModStr ++ " logs:</b>\n" ++
 			      [io_lib:format(
-				 "<tr><td>~p</td><td><a href=~p>~s</a></td></tr>",
-				 [S,L,filename:basename(L)])
+				 "<tr><td>~p</td><td><a href=\"~ts\">~ts</a>"
+				 "</td></tr>",
+				 [S,ct_logs:uri(L),filename:basename(L)])
 			       || {S,L} <- Ls] ++
 			      "</table>",
 			  io:format(Str,[]),
